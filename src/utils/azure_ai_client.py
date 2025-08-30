@@ -33,9 +33,29 @@ class AzureAIClient:
     multimodal input for OpenAI models and JSON formatting for foundation models.
     """
     # Lists of supported models, categorized by the backend service
-    AZURE_OPENAI_MODELS = ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "o3-mini", "o4-mini"]
-    AZURE_AI_FOUNDATION_MODELS = ["DeepSeek-V3-0324", "DeepSeek-R1-0528", "Llama-3.3-70B-Instruct", "Llama-4-Maverick-17B-128E-Instruct-FP8", "mistral-medium-2505", "Phi-4"]
-    OPENAI_REASONING_MODELS = ["o3-mini", "o4-mini"]
+    AZURE_OPENAI_MODELS = [
+        "gpt-5-mini",
+        "gpt-5-chat",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4o",
+        "o3-mini",
+        "o4-mini"]
+
+    AZURE_AI_FOUNDATION_MODELS = [
+        "DeepSeek-V3-0324",
+        "DeepSeek-R1-0528",
+        "gpt-oss-120b",
+        "Llama-3.3-70B-Instruct",
+        "Llama-4-Maverick-17B-128E-Instruct-FP8",
+        "mistral-medium-2505",
+        "Phi-4"]
+
+    # Define OpenAI reasoning models which need special handling
+    OPENAI_REASONING_MODELS = [
+        "gpt-5-mini",
+        "o3-mini",
+        "o4-mini"]
 
     def __init__(self, system_prompt: str = "You are a helpful assistant."):
         """
@@ -182,7 +202,7 @@ class AzureAIClient:
             "usage": response.usage
         }
 
-    
+
     def _generate_foundation(self, model_name, user_prompt, temperature=0, max_tokens=2048, response_format=None):
         """
         Generates a completion using the Azure AI Foundation Models service.
