@@ -217,10 +217,12 @@ class AzureAIClient:
 
         # Build arguments for the API call
         kwargs = {"messages": messages, "max_tokens": max_tokens, "temperature": temperature, "model": model_name}
-        if response_format and response_format.get("type") == "json_object":
-            kwargs["response_format"] = {"type": response_format.get("type")}
 
-        response = self.foundation_client.chat.completions.create(**kwargs)
+        # Add response_format ONLY if the model supports it and it's requested to be JSON
+        if response_format and response_format.get("type") == "json_object" and model_name in ["DeepSeek-V3-0324", "Llama-3.3-70B-Instruct", "Mistral-Large-2411"]:
+             kwargs["response_format"] = {"type": response_format.get("type")}
+
+        response = self.foundation_client.complete(**kwargs)
         return {
             "text": response.choices[0].message.content,
             "usage": response.usage

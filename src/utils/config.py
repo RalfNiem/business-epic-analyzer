@@ -34,7 +34,8 @@ EPIC_HTML_TEMPLATE = os.path.join(TEMPLATES_DIR, 'epic-html_template.html')
 LLM_MODEL_HTML_GENERATOR = "gpt-4.1-mini"
 LLM_MODEL_BUSINESS_VALUE = "gpt-4.1"
 LLM_MODEL_TIME_CREEP = "o3-mini"
-LLM_MODEL_SUMMARY = "o3-mini"
+#LLM_MODEL_SUMMARY = "o3-mini"
+LLM_MODEL_SUMMARY = "gpt-oss-120b"
 LLM_MODEL_TRANSLATOR = "gpt-4.1"
 
 # Default Flags
