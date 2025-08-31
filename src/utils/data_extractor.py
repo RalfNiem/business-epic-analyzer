@@ -118,12 +118,16 @@ class DataExtractor:
                 # Verarbeite jeden Child-Issue-Link
                 for child_link in child_links:
                     # Extrahiere Issue-Schlüssel und URL
-                    child_key = child_link.text.strip()
+                    raw_text = child_link.text.strip()
                     child_href = child_link.get_attribute("href")
 
-                    # Überspringe leere oder ungültige Links
-                    if not child_key or not re.match(r'[A-Z]+-\d+', child_key):
-                        continue
+                    # KORREKTUR: Verwende re.search, um den Key robuster zu extrahieren
+                    match = re.search(r'([A-Z]+-\d+)', raw_text)
+                    if not match:
+                        continue  # Überspringe, wenn kein gültiger Key gefunden wird
+
+                    child_key = match.group(1)
+
 
                     logger.info(f"Child Issue gefunden: {child_key}")
 
@@ -158,6 +162,7 @@ class DataExtractor:
             logger.info(f"Keine Child Issues gefunden")
 
         return child_issues
+
 
 
     @staticmethod

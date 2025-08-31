@@ -1,3 +1,43 @@
+"""
+Führt eine umfassende, zeitbasierte Analyse des Story-Backlogs für ein
+gegebenes Jira Business Epic durch, um Einblicke in die aktuelle Dynamik,
+den Fortschritt und die "Gesundheit" des Backlogs zu erhalten.
+
+Dieses Skript analysiert die gesamte Hierarchie eines Jira-Epics und
+konzentriert sich dabei auf die 'Story'-Issues. Es berechnet und präsentiert
+vier Schlüsselanalysen für einen benutzerdefinierten Zeitraum (in Wochen):
+
+Funktionsweise:
+1.  **Datenbeschaffung:** Lädt die vollständige Issue-Hierarchie und alle
+    zugehörigen Aktivitäten für das angegebene Epic.
+2.  **Zeitanalyse:** Ermittelt für jede Story das exakte Erstellungsdatum
+    (Zeitpunkt der ersten Aktivität) und das Abschlussdatum (Zeitpunkt des
+    Wechsels zu 'Closed' oder 'Resolved').
+3.  **Vier-Quadranten-Analyse:**
+    - **Backlog-Veränderung:** Berechnet die Netto-Veränderung des Backlogs
+      (neu erstellte vs. abgeschlossene Stories) im definierten Zeitraum und
+      gibt an, ob der Backlog gewachsen oder geschrumpft ist.
+    - **Neu erstellte Stories:** Listet alle Stories auf, die innerhalb des
+      Zeitraums erstellt wurden, um die jüngsten Aktivitäten im Refinement
+      zu zeigen.
+    - **Kürzlich abgeschlossene Stories:** Zeigt alle Stories, die im Zeitraum
+      abgeschlossen wurden. Die Liste ist nach der Gesamtlaufzeit sortiert,
+      um schnell zu erkennen, welche "Altlasten" kürzlich abgearbeitet wurden.
+    - **Offene Stories:** Listet alle noch offenen Stories auf, sortiert nach
+      dem Datum ihrer letzten Aktivität. Dies hilft, "vergessene" oder
+      blockierte Tickets zu identifizieren, die lange nicht mehr bearbeitet wurden.
+
+Usage:
+    Das Skript wird über die Kommandozeile ausgeführt und erfordert einen
+    Jira-Key. Der Analysezeitraum ist optional.
+
+    - Standard-Analyse für die letzten 4 Wochen:
+      python src/analyze_story_backlog.py BEMABU-1234
+
+    - Analyse für einen benutzerdefinierten Zeitraum (z.B. 12 Wochen):
+      python src/analyze_story_backlog.py BEMABU-1234 --weeks 12
+"""
+
 import os
 import sys
 import argparse
