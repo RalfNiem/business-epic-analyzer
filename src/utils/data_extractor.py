@@ -98,6 +98,7 @@ class DataExtractor:
             # Wenn das Feld gar nicht existiert
             return "n/a"
 
+
     @staticmethod
     def _find_child_issues(driver):
         """
@@ -117,14 +118,13 @@ class DataExtractor:
 
                 # Verarbeite jeden Child-Issue-Link
                 for child_link in child_links:
-                    # Extrahiere Issue-Schlüssel und URL
-                    raw_text = child_link.text.strip()
+                    # Extrahiere die URL, die den verlässlichen Key enthält
                     child_href = child_link.get_attribute("href")
 
-                    # KORREKTUR: Verwende re.search, um den Key robuster zu extrahieren
-                    match = re.search(r'([A-Z]+-\d+)', raw_text)
+                    # Extrahiere den Key direkt aus der URL anstatt aus dem sichtbaren Text
+                    match = re.search(r'/browse/([A-Z][A-Z0-9]*-\d+)', child_href)
                     if not match:
-                        continue  # Überspringe, wenn kein gültiger Key gefunden wird
+                        continue
 
                     child_key = match.group(1)
 
@@ -162,7 +162,6 @@ class DataExtractor:
             logger.info(f"Keine Child Issues gefunden")
 
         return child_issues
-
 
 
     @staticmethod
@@ -265,7 +264,7 @@ class DataExtractor:
 
         # Title
         try:
-            title_elem = driver.find_element(By.XPATH, "//h2[@id='summary-val']")
+            title_elem = driver.find_element(By.XPATH, "//div[@id='summary-val']/h2")
             data["title"] = title_elem.text.strip()
             logger.info(f"Titel gefunden: {data['title']}")
         except Exception as e:
@@ -312,6 +311,17 @@ class DataExtractor:
         except Exception as e:
             logger.info(f"Assignee nicht gefunden")
 
+        # Priority
+        try:
+            # KORREKTUR: Der Selektor zielt nun direkt auf die ID des Wert-Containers.
+            priority_elem = driver.find_element(By.XPATH, "//span[@id='priority-val']")
+            # .text extrahiert den sichtbaren Text und .strip() entfernt Leerzeichen.
+            priority_text = priority_elem.text.strip()
+            data["priority"] = priority_text
+            logger.info(f"Priority gefunden: {priority_text}")
+        except Exception as e:
+            logger.info(f"Priority nicht gefunden")
+
         # Resolution <-- NEUER BLOCK START
         try:
             resolution_elem = driver.find_element(By.XPATH, "//span[@id='resolution-val']")
@@ -322,20 +332,19 @@ class DataExtractor:
             logger.info(f"Resolution nicht gefunden (normal bei 'Unresolved' Issues)")
         # NEUER BLOCK ENDE -->
 
+
         # Issue Type
         try:
+            # Finde den Container, der den Typ-Namen als Text enthält
             issue_type_container = driver.find_element(By.XPATH, "//span[@id='type-val']")
-            issue_type_img = issue_type_container.find_element(By.XPATH, ".//img[@alt]")
-            alt_text = issue_type_img.get_attribute("alt")
-            match = re.match(r'Icon:\s+(.*)', alt_text)
-            if match:
-                issue_type = match.group(1).strip()
-                data["issue_type"] = issue_type
-                logger.info(f"Issue Type gefunden (aus alt-Attribut): {issue_type}")
-            else:
-                issue_type = issue_type_img.get_attribute("title")
-                data["issue_type"] = issue_type
-                logger.info(f"Issue Type gefunden (aus title-Attribut): {issue_type}")
+
+            # Extrahiere den gesamten sichtbaren Text aus dem Container
+            issue_type_text = issue_type_container.text.strip()
+
+            # Speichere den bereinigten Text
+            data["issue_type"] = issue_type_text
+            logger.info(f"Issue Type gefunden: {issue_type_text}")
+
         except Exception as e:
             # Fallback-Block für Issue Type
             logger.info(f"Issue Type mit primärer Methode nicht gefunden, starte Fallback...")
@@ -420,48 +429,41 @@ class DataExtractor:
         except Exception as e:
             logger.info(f"Keine Anhänge gefunden")
 
+
         # Acceptance Criteria
         try:
-            acceptance_title = driver.find_element(By.XPATH, "//strong[@title='Acceptance Criteria']")
-            label_elem = acceptance_title.find_element(By.XPATH, ".//label")
+            # KORREKTUR: Finde das Label direkt über seinen sichtbaren Text, nicht über ein title-Attribut.
+            label_elem = driver.find_element(By.XPATH, "//label[text()='Acceptance Criteria:']")
+
+            # Hole die ID aus dem 'for'-Attribut des Labels.
             field_id = label_elem.get_attribute("for")
+
+            # Finde das zugehörige Wert-Feld über die konstruierte ID.
             acceptance_field = driver.find_element(By.XPATH, f"//div[@id='{field_id}-val']")
-            criteria_items = acceptance_field.find_elements(By.XPATH, ".//ul/li")
-            if not criteria_items: criteria_items = acceptance_field.find_elements(By.XPATH, ".//p")
-            for item in criteria_items:
-                criterion_text = item.text.strip()
-                if criterion_text: data["acceptance_criteria"].append(criterion_text)
+
+            # Extrahiere den Text robust. Bevorzuge <p>-Tags, falle aber auf den Gesamttext zurück.
+            criteria_items = acceptance_field.find_elements(By.XPATH, ".//p")
+            if criteria_items:
+                for item in criteria_items:
+                    criterion_text = item.text.strip()
+                    if criterion_text:
+                        data["acceptance_criteria"].append(criterion_text)
+            else:
+                # Fallback, falls der Text direkt im Div ohne <p> steht.
+                full_text = acceptance_field.text.strip()
+                if full_text:
+                    data["acceptance_criteria"].extend([line.strip() for line in full_text.split('\n') if line.strip()])
+
             logger.info(f"{len(data['acceptance_criteria'])} Acceptance Criteria gefunden")
         except Exception as e:
-            # Fallback-Block für Acceptance Criteria
-            logger.info(f"Acceptance Criteria mit primärer Methode nicht gefunden, starte Fallback...")
-            try:
-                acceptance_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Acceptance Criteria') or contains(@title, 'Acceptance Criteria')]")
-                if acceptance_elements:
-                    ul_elements = driver.find_elements(By.XPATH, "//ul[preceding::*[contains(text(), 'Acceptance Criteria')]][1]//li")
-                    if ul_elements:
-                        for item in ul_elements:
-                            criterion_text = item.text.strip()
-                            if criterion_text and criterion_text not in data["acceptance_criteria"]:
-                                data["acceptance_criteria"].append(criterion_text)
-                logger.info(f"Mit Fallback-Methode {len(data['acceptance_criteria'])} Acceptance Criteria gefunden")
-            except Exception as fallback_e:
-                logger.error(f"Acceptance Criteria mit beiden Methoden nicht gefunden")
+            logger.info(f"Acceptance Criteria konnten nicht extrahiert werden.")
 
-        # Labels
-        try:
-            labels_ul = driver.find_element(By.XPATH, "//ul[contains(@class, 'labels')]")
-            label_links = labels_ul.find_elements(By.XPATH, ".//li/a[@title]")
-            for label_link in label_links:
-                label_title = label_link.get_attribute("title")
-                if label_title: data["labels"].append(label_title)
-            logger.info(f"{len(data['labels'])} Labels gefunden: {', '.join(data['labels'])}")
-        except Exception as e:
-            logger.info(f"Labels nicht gefunden")
-
+            
         # Components
         try:
-            components_container = driver.find_element(By.XPATH, "//span[@id='components-field']")
+            # KORREKTUR: Der Selektor zielt nun auf den stabileren
+            # übergeordneten Container 'components-val', der alle Links umschließt.
+            components_container = driver.find_element(By.XPATH, "//span[@id='components-val']")
             component_links = components_container.find_elements(By.XPATH, ".//a[contains(@href, '/issues/')]")
             for comp_link in component_links:
                 component_code = comp_link.text.strip()
@@ -469,6 +471,7 @@ class DataExtractor:
             logger.info(f"{len(data['components'])} Components gefunden: {', '.join([comp['code'] for comp in data['components']])}")
         except Exception as e:
             logger.info(f"Keine Components gefunden")
+
 
         # 1. "is realized by" Links extrahieren und direkt zu 'issue_links' hinzufügen
         try:

@@ -78,6 +78,7 @@ class TokenUsage:
         "o3-pro": {"input": 0.02, "output": 0.08},
         "o4-mini": {"input": 0.0011, "output": 0.0044},
         "o3-mini": {"input": 0.0011, "output": 0.0044},
+        "gpt-oss-120b": {"input": 0.00015, "output": 0.0006},
 
         "claude-3-5-haiku": {"input": 0.0008, "output": 0.004},
         "claude-3-7-sonnet-latest": {"input": 0.003, "output": 0.015},
