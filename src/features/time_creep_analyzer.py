@@ -1,4 +1,29 @@
-# src/features/time_creep_analyzer.py
+"""
+Führt eine detaillierte, zustandsbasierte Analyse von Terminänderungen durch
+und generiert eine LLM-basierte Zusammenfassung der Ergebnisse.
+
+Diese Klasse ist darauf spezialisiert, den "Time Creep" – also die schleichende
+Verschiebung von Fertigstellungsterminen – auf einer strategischen Ebene
+sichtbar zu machen. Sie analysiert nicht nur den aktuellen, sondern den
+gesamten chronologischen Verlauf von Zieldaten ('Target end') und geplanten
+Auslieferungsquartalen ('Fix Version/s').
+
+Ein besonderer Fokus liegt auf den wichtigsten Planungseinheiten: dem Business
+Epic selbst und seinen direkten Nachfolgern (z.B. Portfolio Epics, Initiatives).
+Diese Einschränkung dient dazu, das Signal-Rausch-Verhältnis zu verbessern und
+die Analyse auf die für die strategische Steuerung relevantesten
+Verschiebungen zu konzentrieren.
+
+Kernfunktionalität:
+-   Analysiert die Aktivitätshistorie für die Felder 'Target end' und 'Fix Version/s'.
+-   Parst und normalisiert verschiedene Datums- und Quartalsformate.
+-   Klassifiziert jede Änderung als "TIME_SET" (erstmalige Setzung), "TIME_CREEP"
+    (Verschiebung in die Zukunft) oder "TIME_PULL_IN" (Verschiebung in die Vergangenheit).
+-   Nutzt ein Large Language Model (LLM), um die identifizierten Terminverschiebungen
+    im Kontext der Epic-Beschreibung zu interpretieren und eine prägnante,
+    qualitative Zusammenfassung der Termintreue zu erstellen.
+"""
+
 import re
 import json
 import os # +++ NEUER IMPORT

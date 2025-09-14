@@ -1,3 +1,25 @@
+"""
+Analysiert den Umfang, die Struktur und den Aufwand eines Projekts.
+
+Diese Klasse ist darauf spezialisiert, quantitative Metriken zur Größe und
+Komplexität eines Projekts zu berechnen. Sie untersucht die gesamte Hierarchie
+von Issues, die unter einem Business Epic zusammengefasst sind, und liefert
+wichtige Kennzahlen für das Projektmanagement und die Portfolioplanung.
+
+Die Analyse umfasst:
+-   **Größenmetriken:** Zählt die Gesamtzahl der Issues, die Anzahl der technischen
+    Epics und die Anzahl der User Stories.
+-   **Aufwandsschätzung:** Aggregiert die Story Points aller User Stories zu einer
+    Gesamtsumme.
+-   **Strukturanalyse:** Identifiziert, auf wie viele verschiedene Jira-Projekte
+    (Teams/Systeme) sich die Arbeit verteilt. Dies dient als Indikator für die
+    organisatorische Komplexität und den Koordinationsaufwand.
+-   **Qualitative Bewertung:** Generiert eine textuelle Zusammenfassung, die das
+    Projekt basierend auf den ermittelten Metriken als "klein", "mittel" oder "groß"
+    einstuft und eine Empfehlung bezüglich des Management-Fokus ausspricht,
+    insbesondere bei hoher Komplexität.
+"""
+
 # src/features/scope_analyzer.py
 import statistics
 import json

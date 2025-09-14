@@ -171,20 +171,20 @@ class DataExtractor:
 
         Implementiert mehrere Fallback-Mechanismen, um den Text auch aus
         komplexeren HTML-Strukturen (z.B. 'flooded' divs) zuverlässig zu
-        extrahieren.
+        extrahieren. Diese Version ist korrigiert, um das Feld basierend auf
+        seinem sichtbaren Label-Text anstatt eines 'title'-Attributs zu finden.
         """
         business_scope = ""
 
         try:
-            # Suche nach dem Label mit title="Business Scope"
-            business_scope_label = driver.find_element(By.XPATH,
-                "//strong[@title='Business Scope']//label[contains(@for, 'customfield_')]")
+            # --- KORREKTUR START ---
+            # Der neue XPath sucht nach einem <strong>-Tag, das den Text "Business Scope"
+            # enthält, und wählt dann das direkt folgende <div>-Geschwisterelement aus.
+            # Dies ist robuster als die Suche nach einem 'title'-Attribut oder einer 'for'-ID.
+            business_scope_div = driver.find_element(By.XPATH,
+                "//strong[contains(., 'Business Scope')]/following-sibling::div[1]")
+            # --- KORREKTUR ENDE ---
 
-            # Hole die customfield_id
-            field_id = business_scope_label.get_attribute("for")
-
-            # Suche nach dem zugehörigen Wert-Element
-            business_scope_div = driver.find_element(By.XPATH, f"//div[@id='{field_id}-val']")
 
             # Robustere Extraktion des Textes - versuche verschiedene Wege
             # 1. Versuche zuerst, direkt den Text zu holen
@@ -222,31 +222,95 @@ class DataExtractor:
             logger.info(f"Business Scope konnte nicht extrahiert werden")
 
         return business_scope
+        
+
+    @staticmethod
+    def _extract_business_value_from_table(soup: BeautifulSoup) -> dict | None:
+        """
+        Extrahiert den Business Value direkt aus den HTML-Tabellen in der Beschreibung.
+        (Finale, robuste Version mit korrekter Sub-Header-Suche)
+        """
+        try:
+            # Schritt 1: Finden der Überschrift (Anker)
+            bv_header = soup.find(lambda tag: tag.name == 'h3' and 'Business Value / Cost of Delay' in tag.get_text())
+
+            if not bv_header:
+                return None
+
+            # Schritt 2: Verarbeiten der Tabelleninhalte
+            # Hilfsfunktion für sauberen Text
+            def get_cell_text(table, row_idx, col_idx, table_name):
+                try:
+                    cell = table.find_all('tr')[row_idx].find_all(['td', 'th'])[col_idx]
+                    text = cell.get_text(separator='\n', strip=True)
+                    return text
+                except IndexError:
+                    return ""
+
+            impact_header = soup.find(lambda tag: tag.name == 'p' and 'Business Impact' in tag.get_text())
+            strategy_header = soup.find(lambda tag: tag.name == 'p' and 'Strategic Enablement/Risk Reduktion' in tag.get_text())
+            time_header = soup.find(lambda tag: tag.name == 'p' and 'Time Criticality' in tag.get_text())
+
+            if not (impact_header and strategy_header and time_header):
+                return None
+
+            impact_table = impact_header.find_next_sibling('div', class_='table-wrap').find('table')
+            strategy_table = strategy_header.find_next_sibling('div', class_='table-wrap').find('table')
+            time_table = time_header.find_next_sibling('div', class_='table-wrap').find('table')
+
+            # Verarbeitung der einzelnen Tabellen
+            business_impact = {
+                "scale": int(get_cell_text(impact_table, 1, 0, "Business Impact") or 0),
+                "revenue": get_cell_text(impact_table, 1, 1, "Business Impact"),
+                "cost_saving": "",
+                "risk_loss": get_cell_text(impact_table, 1, 2, "Business Impact"),
+                "justification": get_cell_text(impact_table, 1, 3, "Business Impact")
+            }
+            strategic_enablement = {
+                "scale": int(get_cell_text(strategy_table, 1, 0, "Strategic Enablement") or 0),
+                "risk_minimization": get_cell_text(strategy_table, 1, 1, "Strategic Enablement"),
+                "strat_enablement": get_cell_text(strategy_table, 1, 2, "Strategic Enablement"),
+                "justification": get_cell_text(strategy_table, 1, 3, "Strategic Enablement")
+            }
+            time_criticality = {
+                "scale": int(get_cell_text(time_table, 1, 0, "Time Criticality") or 0),
+                "time": get_cell_text(time_table, 1, 1, "Time Criticality"),
+                "justification": get_cell_text(time_table, 1, 2, "Time Criticality")
+            }
+
+            logger.info("-> Business Value Tabelleninhalte erfolgreich verarbeitet.")
+
+            # Schritt 3: Bereinigung der Beschreibung
+            bv_header.extract()
+            impact_header.find_next_sibling('div', class_='table-wrap').extract()
+            strategy_header.find_next_sibling('div', class_='table-wrap').extract()
+            time_header.find_next_sibling('div', class_='table-wrap').extract()
+            impact_header.extract()
+            strategy_header.extract()
+            time_header.extract()
+
+            return {
+                "business_impact": business_impact,
+                "strategic_enablement": strategic_enablement,
+                "time_criticality": time_criticality
+            }
+
+        except Exception as e:
+            logger.error(f"Ein unerwarteter Fehler ist beim Parsen der Business-Value-Tabelle aufgetreten: {e}", exc_info=True)
+            return None
 
 
     def extract_issue_data(self, driver, issue_key):
         """
         Extrahiert umfassende Daten eines Jira-Issues in ein strukturiertes Format.
-
-        Diese Methode ist der primäre Extraktionsmotor. Sie durchsucht die
-        Jira-Seite systematisch nach einer Vielzahl von Metadaten und Inhalten.
-
-        Ein Schlüsselmerkmal ist die Aggregation aller gefundenen Issue-
-        Beziehungen ("is realized by", "child issues", "issues in epic") in
-        eine einzige Liste `issue_links`. Jeder Eintrag in dieser Liste wird mit
-        einem `relation_type` versehen, um die Art der Beziehung für die
-        nachgelagerte Verarbeitung klar zu kennzeichnen.
-
-        Für kritische Felder wie "Issue Type" und "Acceptance Criteria" sind
-        Fallback-Methoden implementiert, um die Extraktion auch bei
-        abweichenden UI-Strukturen zu gewährleisten.
+        (Finale Version mit korrekter Extraktion von Business Value UND Nutzenstatement)
         """
         data = {
             "key": issue_key,
             "issue_type": "",
             "title": "",
             "status": "",
-            "resolution": "",  # <-- Hinzugefügt
+            "resolution": "",
             "story_points": "n/a",
             "description": "",
             "business_value": {},
@@ -270,13 +334,106 @@ class DataExtractor:
         except Exception as e:
             logger.info(f"Titel nicht gefunden: {e}")
 
-        # Description
+        # Issue Type (muss vor der Description-Logik extrahiert werden)
         try:
-            desc_elem = driver.find_element(By.XPATH, "//div[contains(@id, 'description') or contains(@class, 'description')]")
-            data["description"] = desc_elem.text
-            logger.info(f"Beschreibung gefunden ({len(desc_elem.text)} Zeichen)")
+            issue_type_container = driver.find_element(By.XPATH, "//span[@id='type-val']")
+            data["issue_type"] = issue_type_container.text.strip()
+            logger.info(f"Issue Type gefunden: {data['issue_type']}")
         except Exception as e:
-            logger.info(f"Beschreibung nicht gefunden: {e}")
+            logger.error(f"Issue Type konnte nicht extrahiert werden: {e}")
+
+        # --- START DER FINALEN LOGIK FÜR DESCRIPTION & BUSINESS VALUE ---
+        try:
+            desc_elem = driver.find_element(By.XPATH, "//div[contains(@id, 'description-val')]")
+            description_html = desc_elem.get_attribute('innerHTML')
+            soup = BeautifulSoup(description_html, 'lxml')
+
+            # Versuche, den Business Value direkt aus der Tabelle zu extrahieren
+            extracted_bv = self._extract_business_value_from_table(soup)
+
+            if extracted_bv:
+                # "Wenn-Ja"-Pfad: Tabelle wurde gefunden und geparst
+                data["business_value"] = extracted_bv
+                logger.info("Business Value direkt aus HTML-Tabelle extrahiert.")
+
+                # NEUE LOGIK: Suche gezielt nach dem "Nutzenstatement"-Panel
+                nutzen_panel = soup.find(lambda tag: tag.name == 'div' and "Business Epic Nutzenstatement" in tag.get_text())
+                if nutzen_panel:
+                    panel_content = nutzen_panel.find('div', class_='panelContent')
+                    if panel_content:
+                        data["description"] = panel_content.get_text(separator='\n', strip=True)
+                        logger.info("Nutzenstatement wurde als Beschreibung extrahiert.")
+                else:
+                    logger.warning("Kein 'Nutzenstatement'-Panel gefunden. Beschreibung könnte unvollständig sein.")
+                    data["description"] = soup.get_text(separator="\n", strip=True)
+            else:
+                # "Wenn-Nein"-Pfad (Fallback zur KI)
+                logger.info("Keine strukturierte Business-Value-Tabelle gefunden. Nutze KI-Fallback.")
+                full_description_text = desc_elem.text
+                if data["issue_type"] == 'Business Epic' and self.description_processor:
+                    try:
+                        processed_text = self.description_processor(
+                            full_description_text, self.model, self.token_tracker, self.azure_client
+                        )
+                        data["description"] = processed_text.get('description', full_description_text)
+                        data["business_value"] = processed_text.get('business_value', {})
+                        logger.info("Business Value per KI-Aufruf extrahiert und Beschreibung bereinigt.")
+                    except Exception as bv_error:
+                        logger.error(f"Fehler bei der Verarbeitung des Business Value via KI: {bv_error}")
+                        data["description"] = full_description_text
+                else:
+                    data["description"] = full_description_text
+
+            # --- NEUE LOGIK FÜR ACCEPTANCE CRITERIA ---
+            # Zuerst das dedizierte Feld durchsuchen
+            try:
+                label_elem = driver.find_element(By.XPATH, "//label[text()='Acceptance Criteria:']")
+                field_id = label_elem.get_attribute("for")
+                acceptance_field = driver.find_element(By.XPATH, f"//div[@id='{field_id}-val']")
+                # Hier extrahieren wir den rohen HTML-Inhalt, um Listen und Umbrüche zu erhalten
+                ac_html = acceptance_field.get_attribute('innerHTML')
+                ac_soup = BeautifulSoup(ac_html, 'lxml')
+
+                # Extrahiere die Kriterien und filtere den Standard-Platzhaltertext heraus
+                placeholder_text = "In Scope/Akzeptanzkriterien: siehe Ausfüllhilfe"
+                criteria_list = [
+                    item.get_text(strip=True) for item in ac_soup.find_all(['p', 'li'])
+                    if item.get_text(strip=True) and placeholder_text not in item.get_text()
+                ]
+
+                if criteria_list:
+                    data["acceptance_criteria"].extend(criteria_list)
+                    logger.info(f"{len(criteria_list)} Acceptance Criteria aus dem dedizierten Feld extrahiert und bereinigt.")
+            except Exception:
+                 logger.info("Dediziertes 'Acceptance Criteria'-Feld nicht gefunden oder leer.")
+
+            # Wenn das dedizierte Feld leer war, suche im Beschreibungs-Panel
+            if not data["acceptance_criteria"]:
+                logger.info("Suche nach Akzeptanzkriterien als Fallback im Beschreibungstext...")
+                # Finde den spezifischen Header-Tag (<b> oder <strong>), um die Suche einzugrenzen
+                ac_header = soup.find(lambda tag: tag.name in ['b', 'strong'] and 'In Scope / Akzeptanzkriterien' in tag.get_text())
+
+                if ac_header:
+                    # Navigiere vom Header zum übergeordneten Panel-Container
+                    ac_panel = ac_header.find_parent('div', class_='panel')
+                    if ac_panel:
+                        panel_content = ac_panel.find('div', class_='panelContent')
+                        if panel_content:
+                            # Extrahiere die Kriterien und filtere den Standard-Platzhaltertext heraus
+                            placeholder_text = "In Scope/Akzeptanzkriterien: siehe Ausfüllhilfe"
+                            criteria_list = [
+                                item.get_text(strip=True) for item in panel_content.find_all(['p', 'li'])
+                                if item.get_text(strip=True) and placeholder_text not in item.get_text()
+                            ]
+
+                            if criteria_list:
+                                data["acceptance_criteria"].extend(criteria_list)
+                                logger.info(f"{len(criteria_list)} Acceptance Criteria aus dem 'In Scope'-Panel extrahiert und bereinigt.")
+            # --- ENDE NEUE LOGIK FÜR ACCEPTANCE CRITERIA ---
+
+        except Exception as e:
+            logger.info(f"Beschreibung, BV und AC konnten nicht extrahiert werden: {e}")
+
 
         # Business Scope extrahieren und zur Description hinzufügen:
         try:
@@ -313,68 +470,19 @@ class DataExtractor:
 
         # Priority
         try:
-            # KORREKTUR: Der Selektor zielt nun direkt auf die ID des Wert-Containers.
             priority_elem = driver.find_element(By.XPATH, "//span[@id='priority-val']")
-            # .text extrahiert den sichtbaren Text und .strip() entfernt Leerzeichen.
-            priority_text = priority_elem.text.strip()
-            data["priority"] = priority_text
-            logger.info(f"Priority gefunden: {priority_text}")
+            data["priority"] = priority_elem.text.strip()
+            logger.info(f"Priority gefunden: {data['priority']}")
         except Exception as e:
             logger.info(f"Priority nicht gefunden")
 
-        # Resolution <-- NEUER BLOCK START
+        # Resolution
         try:
             resolution_elem = driver.find_element(By.XPATH, "//span[@id='resolution-val']")
             data["resolution"] = resolution_elem.text.strip()
             logger.info(f"Resolution gefunden: {data['resolution']}")
         except Exception as e:
-            # Dies ist ein erwarteter Fall für offene Issues.
             logger.info(f"Resolution nicht gefunden (normal bei 'Unresolved' Issues)")
-        # NEUER BLOCK ENDE -->
-
-
-        # Issue Type
-        try:
-            # Finde den Container, der den Typ-Namen als Text enthält
-            issue_type_container = driver.find_element(By.XPATH, "//span[@id='type-val']")
-
-            # Extrahiere den gesamten sichtbaren Text aus dem Container
-            issue_type_text = issue_type_container.text.strip()
-
-            # Speichere den bereinigten Text
-            data["issue_type"] = issue_type_text
-            logger.info(f"Issue Type gefunden: {issue_type_text}")
-
-        except Exception as e:
-            # Fallback-Block für Issue Type
-            logger.info(f"Issue Type mit primärer Methode nicht gefunden, starte Fallback...")
-            try:
-                issue_type_elements = driver.find_elements(By.XPATH, "//img[contains(@alt, 'Icon:')]")
-                for img in issue_type_elements:
-                    alt_text = img.get_attribute("alt")
-                    if alt_text:
-                        match = re.match(r'Icon:\s+(.*)', alt_text)
-                        if match:
-                            issue_type = match.group(1).strip()
-                            data["issue_type"] = issue_type
-                            logger.info(f"Issue Type mit Fallback-Methode gefunden (aus alt-Attribut): {issue_type}")
-                            break
-                if not data["issue_type"]:
-                    logger.warning("Issue Type auch mit Fallback-Methode nicht gefunden.")
-            except Exception as fallback_e:
-                logger.error(f"Issue Type mit beiden Methoden nicht gefunden: {e}, {fallback_e}")
-
-        # Business Value nur bei 'Business Epic' verarbeiten
-        if data["issue_type"] == 'Business Epic' and self.description_processor is not None:
-            try:
-                processed_text = self.description_processor(
-                    data["description"], self.model, self.token_tracker, self.azure_client
-                )
-                data["description"] = processed_text['description']
-                data["business_value"] = processed_text['business_value']
-                logger.info(f"Business Value ergänzt")
-            except Exception as bv_error:
-                logger.error(f"Fehler bei der Verarbeitung des Business Value: {bv_error}")
 
         # fixVersion Daten
         try:
@@ -430,39 +538,8 @@ class DataExtractor:
             logger.info(f"Keine Anhänge gefunden")
 
 
-        # Acceptance Criteria
-        try:
-            # KORREKTUR: Finde das Label direkt über seinen sichtbaren Text, nicht über ein title-Attribut.
-            label_elem = driver.find_element(By.XPATH, "//label[text()='Acceptance Criteria:']")
-
-            # Hole die ID aus dem 'for'-Attribut des Labels.
-            field_id = label_elem.get_attribute("for")
-
-            # Finde das zugehörige Wert-Feld über die konstruierte ID.
-            acceptance_field = driver.find_element(By.XPATH, f"//div[@id='{field_id}-val']")
-
-            # Extrahiere den Text robust. Bevorzuge <p>-Tags, falle aber auf den Gesamttext zurück.
-            criteria_items = acceptance_field.find_elements(By.XPATH, ".//p")
-            if criteria_items:
-                for item in criteria_items:
-                    criterion_text = item.text.strip()
-                    if criterion_text:
-                        data["acceptance_criteria"].append(criterion_text)
-            else:
-                # Fallback, falls der Text direkt im Div ohne <p> steht.
-                full_text = acceptance_field.text.strip()
-                if full_text:
-                    data["acceptance_criteria"].extend([line.strip() for line in full_text.split('\n') if line.strip()])
-
-            logger.info(f"{len(data['acceptance_criteria'])} Acceptance Criteria gefunden")
-        except Exception as e:
-            logger.info(f"Acceptance Criteria konnten nicht extrahiert werden.")
-
-            
         # Components
         try:
-            # KORREKTUR: Der Selektor zielt nun auf den stabileren
-            # übergeordneten Container 'components-val', der alle Links umschließt.
             components_container = driver.find_element(By.XPATH, "//span[@id='components-val']")
             component_links = components_container.find_elements(By.XPATH, ".//a[contains(@href, '/issues/')]")
             for comp_link in component_links:
@@ -472,69 +549,66 @@ class DataExtractor:
         except Exception as e:
             logger.info(f"Keine Components gefunden")
 
+        # Labels
+        try:
+            labels_container = driver.find_element(By.XPATH, "//div[contains(@class, 'labels-wrap')]")
+            label_links = labels_container.find_elements(By.XPATH, ".//a[contains(@class, 'lozenge')]")
+            for label_link in label_links:
+                label_text = label_link.text.strip()
+                if label_text:
+                    data["labels"].append(label_text)
+            if data["labels"]:
+                logger.info(f"{len(data['labels'])} Labels gefunden: {', '.join(data['labels'])}")
+            else:
+                logger.info("Label-Container gefunden, aber keine Labels darin.")
+        except Exception as e:
+            logger.info(f"Keine Labels gefunden")
 
-        # 1. "is realized by" Links extrahieren und direkt zu 'issue_links' hinzufügen
+        # "is realized by" Links
         try:
             link_elements = driver.find_elements(By.XPATH,
                 "//dl[contains(@class, 'links-list')]/dt[contains(text(), 'is realized by') or @title='is realized by']"
                 "/..//a[contains(@class, 'issue-link')]")
-
             for link in link_elements:
                 issue_key_attr = (link.get_attribute("data-issue-key") or link.text.strip()).replace('\u200b', '')
-
-                # Optional: Versuche, den Summary-Text zu finden
                 summary_text = ""
                 try:
                     parent_element = link.find_element(By.XPATH, "./ancestor::div[contains(@class, 'link-content')]")
                     summary_element = parent_element.find_element(By.XPATH, ".//span[contains(@class, 'link-summary')]")
                     summary_text = summary_element.text.strip()
                 except:
-                    pass # Summary ist optional
-
+                    pass
                 link_item = {
-                    "key": issue_key_attr,
-                    "title": link.text.strip(),
-                    "summary": summary_text,
-                    "url": link.get_attribute("href"),
-                    "relation_type": "realized_by"  # Beziehungstyp direkt hier setzen
+                    "key": issue_key_attr, "title": link.text.strip(), "summary": summary_text,
+                    "url": link.get_attribute("href"), "relation_type": "realized_by"
                 }
-
-                # Nur hinzufügen, wenn der Key noch nicht in der Zielliste ist
                 if not any(item["key"] == link_item["key"] for item in data["issue_links"]):
                     data["issue_links"].append(link_item)
-
             if link_elements:
                 logger.info(f"{len(link_elements)} 'is realized by' Links zu 'issue_links' hinzugefügt.")
         except Exception as e:
             logger.info(f"'is realized by' Links konnten nicht gefunden werden")
 
-        # 2. Child Issues extrahieren und direkt zu 'issue_links' hinzufügen
+        # Child Issues
         try:
-            child_issues = DataExtractor._find_child_issues(driver) # Nur einmal aufrufen
+            child_issues = DataExtractor._find_child_issues(driver)
             initial_link_count = len(data["issue_links"])
-
             for child in child_issues:
-                # Prüfen, ob das Child Issue bereits in der Zielliste ist
                 if not any(item["key"] == child["key"] for item in data["issue_links"]):
-                    child["relation_type"] = "child"  # Beziehungstyp setzen
+                    child["relation_type"] = "child"
                     data["issue_links"].append(child)
-
             added_children = len(data["issue_links"]) - initial_link_count
             if added_children > 0:
                 logger.info(f"{added_children} Child Issues zu 'issue_links' hinzugefügt.")
         except Exception as e:
              logger.info(f"Fehler bei der Verarbeitung von Child Issues")
 
-
-        # 3. "Issues in epic" extrahieren und direkt zu 'issue_links' hinzufügen
+        # "Issues in epic"
         try:
-            # Kurzes, explizites Warten auf den Container, der per JS nachgeladen wird
             wait = WebDriverWait(driver, 2)
             wait.until(EC.element_to_be_clickable((By.ID, "greenhopper-epics-issue-web-panel-label")))
-
             issue_table = driver.find_element(By.ID, "ghx-issues-in-epic-table")
             issue_rows = issue_table.find_elements(By.XPATH, ".//tr[contains(@class, 'issuerow')]")
-
             if issue_rows:
                 logger.info(f"{len(issue_rows)} 'Issues in epic' in der Tabelle gefunden.")
                 for row in issue_rows:
@@ -543,18 +617,13 @@ class DataExtractor:
                         if not any(item["key"] == key for item in data["issue_links"]):
                             url_element = row.find_element(By.XPATH, f".//a[@href='/browse/{key}']")
                             title_element = row.find_element(By.XPATH, ".//td[contains(@class, 'ghx-summary')]")
-
                             data["issue_links"].append({
-                                "key": key,
-                                "title": title_element.text.strip(),
-                                "summary": title_element.text.strip(),
-                                "url": url_element.get_attribute('href'),
-                                "relation_type": "issue_in_epic"
+                                "key": key, "title": title_element.text.strip(), "summary": title_element.text.strip(),
+                                "url": url_element.get_attribute('href'), "relation_type": "issue_in_epic"
                             })
                     except Exception as row_error:
                         logger.warning(f"Konnte eine Zeile im 'Issues in epic'-Panel nicht parsen: {row_error}")
         except TimeoutException:
-            # Normalfall für Issues, die keine Epics sind. Kein Fehler.
             logger.info("Abschnitt 'Issues in epic' nicht gefunden oder nicht rechtzeitig geladen.")
         except Exception as e:
             logger.info(f"Ein unerwarteter Fehler ist bei der Extraktion von 'Issues in epic' aufgetreten")

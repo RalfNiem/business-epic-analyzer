@@ -1,4 +1,27 @@
-# src/features/analysis_runner.py
+"""
+Orchestriert die Ausführung einer Reihe von modularen Analyzer-Klassen.
+
+Diese Klasse dient als zentraler "Dirigent" für den Analyseprozess. Ihre Hauptaufgabe
+ist es, die Hauptanwendung von der Kenntnis über die spezifischen, einzelnen
+Analyseschritte zu entkoppeln. Sie nimmt eine Liste von beliebigen Analyzer-Klassen
+entgegen, führt deren `analyze`-Methode nacheinander aus und sammelt die
+Ergebnisse in einem einzigen, strukturierten Dictionary.
+
+Dieses Design fördert die Modularität und Erweiterbarkeit des Systems. Neue
+Analyseschritte können einfach durch die Erstellung einer neuen Analyzer-Klasse
+und deren Hinzufügen zur Konfiguration integriert werden, ohne dass die
+Ablaufsteuerung in der Hauptanwendung geändert werden muss.
+
+Hauptfunktionalität:
+-   Nimmt eine Liste von Analyzer-Klassen entgegen (nicht Instanzen).
+-   Iteriert durch jede Klasse, instanziiert sie und ruft ihre `analyze`-Methode auf.
+-   Verwendet einen `ProjectDataProvider`, um allen Analyzern eine konsistente
+    und effiziente Datenbasis zur Verfügung zu stellen.
+-   Sammelt die Ergebnisse und gibt sie in einem Dictionary zurück, wobei die
+    Klassennamen als Schlüssel dienen, um eine klare Zuordnung zu gewährleisten.
+-   Beinhaltet eine Fehlerbehandlung, um sicherzustellen, dass der Ausfall eines
+    Analyzers nicht den gesamten Prozess zum Absturz bringt.
+"""
 
 from utils.project_data_provider import ProjectDataProvider
 from utils.logger_config import logger

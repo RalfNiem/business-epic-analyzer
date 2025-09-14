@@ -1,4 +1,31 @@
-# src/features/maturity_analyzer.py
+"""
+Analysiert die Reife von Business Epics basierend auf ihrer Phase
+und spezifischen Kriterien, unter Nutzung von LLM für tiefergehende Textanalysen.
+
+Diese Klasse führt eine qualitative Bewertung eines Business Epics durch, um dessen
+"Reifegrad" zu bestimmen. Der Reifegrad gibt an, wie gut ein Epic definiert,
+geplant und für die nächste Phase im Produktlebenszyklus vorbereitet ist.
+
+Die Analyse ist phasenspezifisch, d.h., die Kriterien ändern sich je nachdem, ob sich
+das Epic in der "Funnel"-, "Exploration"- oder einer späteren Phase befindet. Anstatt
+nur quantitative Metriken zu verwenden, nutzt dieser Analyzer ein Large Language Model (LLM),
+um die Qualität von textuellen Inhalten wie Beschreibungen, Geschäftswert-Begründungen
+und Akzeptanzkriterien zu bewerten.
+
+Kernprozesse:
+-   Ermittelt die aktuelle Phase des Business Epics anhand seines Statusverlaufs.
+-   Führt je nach Phase spezifische Reifegrad-Analysen durch:
+    -   **Phase 1 (Funnel):** Bewertet die Qualität der initialen Beschreibung,
+        die Präzision des angegebenen Business Value und das Vorhandensein einer
+        ersten Aufschlüsselung in Portfolio Epics oder Initiatives.
+    -   **Phase 2 (Exploration):** Führt eine Neubewertung der Beschreibung und des
+        Business Value durch und prüft zusätzlich die Klarheit der untergeordneten
+        Hierarchie sowie die Vollständigkeit von Zieldaten und Fix-Versionen.
+-   Nutzt gezielte Prompts, um vom LLM strukturierte JSON-Antworten mit Bewertungen
+    (z.B. "Hoch", "Mittel", "Niedrig") und Begründungen zu erhalten.
+-   Protokolliert den Token-Verbrauch für alle LLM-Aufrufe.
+"""
+
 from datetime import datetime
 import json
 import re # Needed for potential regex in parsing

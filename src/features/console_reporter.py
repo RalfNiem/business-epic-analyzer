@@ -1,4 +1,30 @@
-# src/features/console_reporter.py
+"""
+Verantwortlich für die Darstellung von Analyseergebnissen auf der Konsole
+und die Erzeugung von visuellen Plots.
+
+Diese Klasse dient als primäre Ausgabeschicht für die Analyse-Pipeline. Sie nimmt
+die strukturierten Ergebnis-Dictionaries der verschiedenen Analyzer entgegen und
+bereitet sie in einer für den Endbenutzer verständlichen, textbasierten Form für
+die Kommandozeile auf.
+
+Zusätzlich zur reinen Textausgabe ist der `ConsoleReporter` auch dafür zuständig,
+komplexere Daten in visuelle Formate umzuwandeln. Er nutzt die `matplotlib`-Bibliothek,
+um aussagekräftige Graphen und Diagramme zu erstellen (z.B. Status-Timelines oder
+Backlog-Entwicklungs-Charts) und diese als Bilddateien im `plots`-Verzeichnis zu
+speichern. Dies ermöglicht eine tiefere, visuelle Analyse der Projektdaten, die
+über eine reine Textdarstellung hinausgeht.
+
+Hauptaufgaben:
+-   Strukturierte und formatierte Ausgabe der Ergebnisse von `ScopeAnalyzer`,
+    `StatusAnalyzer`, `TimeCreepAnalyzer` etc. auf der Konsole.
+-   Verwendung von Hilfsfunktionen zur menschenlesbaren Formatierung von Daten
+    (z.B. Zeitspannen, Datumsformate).
+-   Generierung und Speicherung von Plots zur Visualisierung von:
+    -   Status-Timelines.
+    -   Backlog-Entwicklung über die Zeit.
+    -   Aktivitäts-Dashboards, die verschiedene Metriken kombinieren.
+"""
+
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd

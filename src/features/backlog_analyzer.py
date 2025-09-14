@@ -1,4 +1,27 @@
-# src/features/backlog_analyzer.py
+"""
+Analysiert die Entwicklung des Story-Backlogs über die Zeit.
+
+Diese Klasse bietet eine quantitative Analyse, wie sich der Backlog von User Stories
+innerhalb eines Projekts entwickelt hat. Sie ermittelt, wann Stories erstellt
+wurden (als Indikator für den "Zufluss" in den Backlog) und wann sie abgeschlossen
+wurden (als Indikator für den "Abfluss").
+
+Die Analyseergebnisse werden in einem täglichen Zeitreihenformat aufbereitet,
+das die kumulative Anzahl der erstellten und abgeschlossenen Stories sowie
+den daraus resultierenden "aktiven Backlog" (die Differenz zwischen beiden)
+zeigt. Diese Daten sind ideal für die Erstellung von "Cumulative Flow Diagrams"
+oder ähnlichen Visualisierungen, die Einblicke in den Projektdurchsatz und
+mögliche Engpässe geben.
+
+Kernlogik:
+-   Identifiziert alle Issues vom Typ 'Story' innerhalb des Projekts.
+-   Ermittelt für jede Story den exakten Zeitpunkt der ersten Aktivität (Erstellung)
+    und den Zeitpunkt des ersten Wechsels in einen Endstatus ('Resolved' oder 'Closed').
+-   Berechnet die globalen Start- und Endzeitpunkte des gesamten Refinements.
+-   Erstellt ein pandas DataFrame, das für jeden Tag im Projektzeitraum die Anzahl
+    der neu erstellten und abgeschlossenen Stories erfasst.
+-   Berechnet die kumulativen Summen, um den Verlauf des Gesamt-Backlogs darzustellen.
+"""
 
 import pandas as pd
 from datetime import datetime, date

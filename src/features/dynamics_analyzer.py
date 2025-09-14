@@ -1,4 +1,26 @@
-# src/features/dynamics_analyzer.py
+"""
+Führt eine Analyse der allgemeinen Projektdynamik durch.
+
+Diese Klasse untersucht den "Puls" eines Projekts, indem sie die Gesamtheit
+aller Aktivitäten (Änderungen an Issues) auswertet. Sie zielt darauf ab,
+Muster und Schlüsselereignisse zu identifizieren, die auf die "Gesundheit"
+und den Fortschritt des Projekts hinweisen.
+
+Die Analyse umfasst mehrere Dimensionen:
+-   **Schlüsselereignisse:** Identifiziert kritische Vorkommnisse wie das Blockieren
+    eines Tickets, Änderungen an der Zeitplanung oder signifikante
+    Scope-Anpassungen.
+-   **Aktivitätslevel:** Misst die Gesamtanzahl der Aktivitäten und deren Verteilung
+    über verschiedene Felder, um zu sehen, wo die meiste Arbeit stattfindet.
+-   **Zeitliche Dynamik:** Analysiert die Aktivität innerhalb eines bestimmten
+    Zeitraums (z.B. die letzten 4 Wochen), um die aktuelle Dynamik zu bewerten.
+-   **Hauptakteure:** Ermittelt die Top-3-Benutzer mit den meisten signifikanten
+    Änderungen, um die Schlüsselpersonen im Projekt zu identifizieren.
+
+Die Ergebnisse liefern einen schnellen Überblick darüber, ob ein Projekt aktiv
+bearbeitet wird, wo potenzielle Probleme liegen und wer die treibenden Kräfte sind.
+"""
+
 from collections import Counter
 from datetime import datetime, timedelta
 from src.utils.project_data_provider import ProjectDataProvider

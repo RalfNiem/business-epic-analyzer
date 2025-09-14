@@ -1,0 +1,68 @@
+# prompts/summary_prompt.yaml
+user_prompt_template: |
+  Developer: Sie sind Product Owner in einem Telekommunikationsunternehmen und arbeiten mit Ihrem IT-Team. Ziel ist es, eine strukturierte, detaillierte Zusammenfassung der Geschäftsanforderungen zu erstellen, wie sie im Business Epic und den zugehörigen Jira-Issues im bereitgestellten JSON-Context definiert sind.
+
+  Arbeiten Sie wie folgt:
+
+  1. Analysieren Sie sorgfältig den beigefügten JSON-Context, der das Business Epic sowie die referenzierten Portfolio Epics, Epics und zugehörigen Jira-Issues enthält.
+
+  2. Erstellen Sie für das Business Epic und seine direkt verknüpften Issues eine Zusammenfassung der Geschäftsanforderungen:
+     a. Gesamtziel – Fassen Sie das übergeordnete Ziel des Business Epics in 2-3 präzisen Sätzen anhand von 'description' und 'title' zusammen. Beschreiben Sie die betroffenen Personen, die beabsichtigte Veränderung und das erwartete Ergebnis. Ist ein Pflichtfeld leer oder fehlt, geben Sie 'Keine Informationen verfügbar' aus.
+     b. Einzelziele – Formulieren Sie zu jedem mit 'issue_links' direkt verbundenen Jira-Issue 1-2 Sätze als Einzelziel, basierend auf 'description' und 'title'. Bei mehr als vier Einzelzielen, fassen Sie diese logisch zusammen. Fehlende Angaben sind mit 'Keine Informationen verfügbar' auszufüllen.
+     c. Geschäftlicher Nutzen ("Business Value") – Nutzen Sie die Felder 'business_value', 'businessImpact', 'strategicEnablement' und 'timeCriticality'. Tragen Sie für das Attribut 'skala' den jeweiligen Zahlenwert ein, fehlt er, setzen Sie 0. Die 'beschreibung' soll kurz und präzise sein, ist sie nicht vorhanden, verwenden Sie 'Keine Informationen verfügbar'. Fehlt 'business_value' komplett, füllen Sie alle zugehörigen Felder wie beschrieben aus.
+     d. Schlüsselfunktionen – Extrahieren Sie 'description', 'title' und 'key' von direkt mit dem Epic verknüpften Jira-Issues. Beschreiben Sie jeweilige Funktionen in 1-2 Sätzen. Lückenhafte Informationen mit 'Keine Informationen verfügbar' auffüllen. Jede Funktion als separates Objekt im Array angeben.
+
+  3. Formatieren Sie Ihre Zusammenfassung wie folgt:
+     - Verwenden Sie klare, exakte Sprache, geeignet für ein IT-Team.
+     - Strukturieren Sie Inhalte mit Listen oder klaren Aufzählungen.
+     - Nutzen Sie sinnvolle Abschnittsüberschriften.
+     - Integrieren Sie sämtliche wesentliche Informationen aus dem Business Epic und den relevanten Jira-Issues.
+     - Fehlende Informationen oder leere Felder sind stets mit 'Keine Informationen verfügbar' zu kennzeichnen.
+
+  Vergewissern Sie sich abschließend, dass die Zusammenfassung die Inhalte des Business Epics und aller referenzierten Issues vollständig und korrekt widerspiegelt, ohne relevante Details auszulassen.
+  Geben Sie keine Annahmen wieder, sondern nur im Kontext enthaltene Fakten.
+  Antworten Sie ausschließlich auf Deutsch!
+
+  Wenn Felder im Eingabekontext fehlen oder unklar sind, stellen Sie gezielte Rückfragen, bevor Sie die Zusammenfassung ausgeben.
+
+  ### JIRA-ISSUES ###
+  {json_context}
+
+  ## Output Format
+  Antwort als valides JSON-Objekt (kein Fließtext oder Kommentierung) im folgenden Format. Ist ein Pflichtfeld nicht vorhanden oder leer (z.B. 'business_value', 'title', 'description'), geben Sie im Output an dieser Stelle 'Keine Informationen verfügbar' aus. Zahlenfelder wie 'skala' sind bei fehlender Angabe mit 0 zu befüllen.
+
+  {
+    "epicId": "EPIC-ID",
+    "title": "Epic-Titel",
+    "ziele": {
+      "gesamtziel": "Zusammenfassung des übergreifenden Ziels des Business Epics ODER: 'Keine Informationen verfügbar'",
+      "einzelziele": [
+        "Einzelziel 1 ODER: 'Keine Informationen verfügbar'",
+        "Einzelziel 2"
+      ]
+    },
+    "businessValue": {
+      "businessImpact": {
+        "skala": 0,
+        "beschreibung": "Beschreibung/Keine Informationen verfügbar"
+      },
+      "strategicEnablement": {
+        "skala": 0,
+        "beschreibung": "Beschreibung/Keine Informationen verfügbar"
+      },
+      "timeCriticality": {
+        "skala": 0,
+        "beschreibung": "Beschreibung/Keine Informationen verfügbar"
+      }
+    },
+    "funktionen": [
+      {
+        "id": "TICKET-ID-1",
+        "titel": "Funktionstitel ODER: 'Keine Informationen verfügbar'",
+        "funktionalitäten": [
+          "Funktionalität 1.1 ODER: 'Keine Informationen verfügbar'",
+          "Funktionalität 1.2"
+        ]
+      }
+    ]
+  }

@@ -34,8 +34,8 @@ EPIC_HTML_TEMPLATE = os.path.join(TEMPLATES_DIR, 'epic-html_template.html')
 LLM_MODEL_HTML_GENERATOR = "gpt-4.1-mini"
 LLM_MODEL_BUSINESS_VALUE = "gpt-4.1"
 LLM_MODEL_TIME_CREEP = "o3-mini"
-LLM_MODEL_SUMMARY = "o3-mini"
-#LLM_MODEL_SUMMARY = "gpt-oss-120b"
+#LLM_MODEL_SUMMARY = "o3-mini"
+LLM_MODEL_SUMMARY = "gpt-oss-120b"
 LLM_MODEL_TRANSLATOR = "gpt-4.1"
 
 # Default Flags
@@ -44,6 +44,9 @@ SCRAPER_CHECK_DAYS = 14  # lädt nur dann ein Jira Issue wenn es älter als x Ta
 
 # Credentials
 JIRA_EMAIL ="ralf.niemeyer@telekom.de"
+
+# NEU: Maximale Anzahl an Zeilen für die Haupt-Logdatei
+MAX_LOG_ITEMS = 100000
 
 # Konfiguration für die Jira Tree Ansichten
 MAX_JIRA_TREE_CONTEXT_SIZE = 30

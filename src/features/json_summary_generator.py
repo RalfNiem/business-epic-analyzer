@@ -1,4 +1,30 @@
-# src/features/json_summary_generator.py
+"""
+Erzeugt eine umfassende, formatierte JSON-Zusammenfassung, die für die
+Verarbeitung durch ein LLM und die finale HTML-Generierung optimiert ist.
+
+Diese Klasse agiert als zentraler "Aggregator" nach Abschluss aller metrischen
+Analysen. Ihre Hauptaufgabe ist es, die strukturierten, aber rohen Daten aus
+dem `AnalysisRunner` mit der qualitativen, textbasierten Zusammenfassung,
+die von einem Sprachmodell (LLM) generiert wurde, zu einem einzigen, kohärenten
+JSON-Objekt zu verschmelzen.
+
+Während dieses Prozesses werden die Daten nicht nur zusammengeführt, sondern
+auch für die finale Präsentation aufbereitet. Zeitspannen werden in ein
+menschenlesbares Format umgewandelt (z.B. "3 Monate, 12 Tage") und Datumsangaben
+werden normiert. Das resultierende `_complete_summary.json`-Dokument dient als
+alleinige Datenquelle für den `EpicHtmlGenerator`, was die Entkopplung von
+Analyse und Präsentation sicherstellt.
+
+Kernfunktionen:
+-   Fusioniert metrische Analyseergebnisse (Scope, Status, etc.) mit der
+    LLM-generierten inhaltlichen Zusammenfassung.
+-   Formatiert Daten wie Zeitspannen und ISO-Datumsstempel in ein
+    präsentationsfreundliches Format.
+-   Konstruiert Dateipfade für eingebettete Artefakte wie Plots.
+-   Speichert das finale, angereicherte JSON-Dokument, das als Kontext für
+    die HTML-Generierung dient.
+"""
+
 import json
 import os
 from datetime import datetime

@@ -1,4 +1,25 @@
-# src/features/status_analyzer.py
+"""
+Analysiert zeitbezogene Metriken von Jira-Projekten basierend auf Statuswechseln.
+
+Diese Klasse ist verantwortlich für die Berechnung und Auswertung von zwei
+wesentlichen zeitlichen Dimensionen eines Projekts:
+
+1.  **Verweildauer (Cycle Time):** Sie ermittelt, wie lange das Haupt-Epic in den
+    einzelnen Phasen seines Lebenszyklus (z.B. 'Funnel', 'Analysis', 'In Progress')
+    verbracht hat. Dies gibt Aufschluss über mögliche Engpässe und die allgemeine
+    Geschwindigkeit des Wertstroms auf strategischer Ebene.
+
+2.  **Coding-Laufzeit (Lead Time):** Sie definiert und berechnet den Zeitraum der
+    aktiven Software-Entwicklung. Dies wird abgeleitet aus den Statuswechseln der
+    untergeordneten User Stories. Die "Coding Time" beginnt, wenn die *erste*
+    Story in den Status 'In Progress' wechselt, und endet, wenn die *letzte*
+    Story in einen Endstatus ('Resolved' oder 'Closed') übergeht. Diese Metrik
+    liefert eine präzise Messung der reinen Umsetzungsdauer.
+
+Die Klasse stützt sich ausschließlich auf die chronologischen Aktivitätsdaten,
+um eine genaue und nachvollziehbare Analyse zu gewährleisten.
+"""
+
 from datetime import datetime, timedelta
 from src.utils.project_data_provider import ProjectDataProvider
 
