@@ -1,23 +1,3 @@
-"""
-Module for generating HTML summary reports from JIRA Business Epic data.
-
-This module provides functionality to create rich HTML reports for Business Epics
-using templated generation augmented by Large Language Models. It transforms structured
-JSON summaries into comprehensive HTML reports with embedded visualizations.
-
-The main class, EpicHtmlGenerator, handles template loading, LLM-based content
-generation, image embedding, and HTML file output. It supports customization of
-templates, output locations, and model selection for generation.
-
-Key features:
-- Template-based HTML generation for Business Epics
-- LLM integration for intelligent content transformation and formatting
-- Automatic embedding of visualization images into HTML via Base64 encoding
-- JIRA issue link formatting and hyperlinking
-- Token usage tracking for LLM API calls
-- Batch processing of multiple Business Epics
-"""
-
 import os
 import base64
 import re
@@ -26,35 +6,50 @@ from pathlib import Path
 import json
 from utils.logger_config import logger
 from typing import Dict, Tuple, Optional
-from openai import OpenAI
-from dotenv import load_dotenv
 from utils.prompt_loader import load_prompt_template
 from utils.config import EPIC_HTML_TEMPLATE, HTML_REPORTS_DIR, ISSUE_TREES_DIR, PLOT_DIR
 
 class EpicHtmlGenerator:
     """
-    Klasse zur Generierung von HTML-Dateien für Business Epics mit Unterstützung
-    für Template-basierte Generierung, LLM-Integration und Bild-Einbettung.
+    Klasse zur Generierung von HTML-Reports für Business Epics.
+
+    Kombiniert Template-Rendering mit LLM-generierten Inhalten und bettet
+    lokale Visualisierungen direkt ein.
+
+    Funktionsweise:
+    ---------------
+    1. Lädt ein HTML-Template (`EPIC_HTML_TEMPLATE`).
+    2. Sendet strukturierte Epic-Daten an einen injizierten AI-Client zur
+       Generierung der HTML-Inhalte.
+    3. Extrahiert das generierte HTML und bereinigt es.
+    4. **Bild-Einbettung:** Sucht referenzierte Bilder in definierten Verzeichnissen
+       (`ISSUE_TREES_DIR`, `PLOT_DIR`), konvertiert sie zu Base64 und bettet sie
+       direkt in das `src`-Attribut der `<img>`-Tags ein.
+
+    Attributes:
+        client: Der injizierte AI-Client (z.B. DnaBotClient) für LLM-Aufrufe.
+        model (str): Das zu verwendende LLM-Modell.
     """
 
     def __init__(self,
+                 ai_client,  # Hinzugefügt
                  template_path: str = EPIC_HTML_TEMPLATE,
-                 model: str = "gpt-4.1-mini",
+                 model: str = "gpt-oss-120b",
                  output_dir: Optional[str] = HTML_REPORTS_DIR,
                  token_tracker=None):
         """
         Initialisiert den HTML-Generator mit dem angegebenen Template und LLM-Modell.
 
         Args:
+            ai_client: Ein Client-Objekt (z.B. DnaBotClient), das die .completion()-Methode implementiert.
             template_path: Pfad zur HTML-Vorlagendatei
             model: Name des zu verwendenden LLM-Modells
             output_dir: Optionales Ausgabeverzeichnis für HTML-Dateien
+            token_tracker: Ein optionales TokenUsage-Objekt.
         """
-        # Umgebungsvariablen aus .env-Datei laden
-        load_dotenv()
 
         self.template_path = template_path
-        self.client = OpenAI()
+        self.client = ai_client
         self.model = model
         self.output_dir = output_dir
         self.template_html = self._load_template()
@@ -199,22 +194,24 @@ class EpicHtmlGenerator:
         logger.info(f"Starte HTML-Generierung mit Model '{self.model}' für {BE_key}")
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": prompt}],
+            response_data = self.client.completion(
+                model_name=self.model,
+                user_prompt=prompt,
+                system_prompt=None,
+                max_tokens=6000,
                 temperature=0,
-                max_tokens=6000
+                response_format=None
             )
-            response_content = response.choices[0].message.content
 
-            if self.token_tracker:
+            response_content = response_data["text"]
+
+            if self.token_tracker and "usage" in response_data:
+                usage = response_data["usage"]
                 self.token_tracker.log_usage(
                     model=self.model,
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens,
-                    total_tokens=response.usage.total_tokens,
+                    input_tokens=usage.get('prompt_tokens', 0),
+                    output_tokens=usage.get('completion_tokens', 0),
+                    total_tokens=usage.get('total_tokens', 0),
                     task_name=f"html_generation",
                 )
 
@@ -229,23 +226,22 @@ class EpicHtmlGenerator:
 
         except Exception as e:
             # Fügen Sie mehr Details zur Fehlermeldung hinzu
-            logger.error(f"Fehler beim Aufruf der OpenAI API oder bei der HTML-Verarbeitung für {BE_key}: {e}", exc_info=True)
+            logger.error(f"Fehler beim Aufruf der API oder bei der HTML-Verarbeitung für {BE_key}: {e}", exc_info=True)
             raise Exception(f"Fehler bei der HTML-Verarbeitung für {BE_key}: {e}")
 
 
-    def process_multiple_epics(self, be_file_path: str, json_dir: str = '../output') -> Dict[str, Dict[str, int]]:
+    def process_multiple_epics(self, be_file_path: str, json_dir: str = '../output'):
         """
         Verarbeitet mehrere Business Epics aus einer Datei.
+        HINWEIS: Diese Methode ist primär für den Standalone-Testlauf gedacht.
 
         Args:
             be_file_path: Pfad zur Datei mit Business Epic Keys
             json_dir: Verzeichnis mit den JSON-Zusammenfassungen
 
         Returns:
-            Dictionary mit Token-Nutzung pro Business Epic
+            None (Token-Tracking erfolgt intern)
         """
-        token_usage_results = {}
-
         try:
             # Business Epic Keys aus Datei lesen
             with open(be_file_path, 'r', encoding='utf-8') as file:
@@ -253,20 +249,28 @@ class EpicHtmlGenerator:
 
             if not be_keys:
                 print(f"Fehler: Keine Business Epic Keys in {be_file_path} gefunden")
-                return token_usage_results
+                return
 
         except Exception as e:
             print(f"Fehler beim Lesen der Business Epic Keys Datei: {e}")
-            return token_usage_results
+            return
 
         # Jeden Business Epic Key verarbeiten
         for be_key in be_keys:
             print(f"Verarbeite Business Epic: {be_key}")
 
             # Eingabedatei lesen
+            json_file_path = f"{json_dir}/{be_key}_json_summary.json"
             try:
-                with open(f"{json_dir}/{be_key}_json_summary.json", 'r', encoding='utf-8') as file:
-                    issue_content = file.read()
+                with open(json_file_path, 'r', encoding='utf-8') as file:
+                    # KORREKTUR: Die Methode erwartet ein dict, keinen String
+                    issue_content_dict = json.load(file)
+            except FileNotFoundError:
+                print(f"Fehler: JSON-Datei nicht gefunden: {json_file_path}")
+                continue
+            except json.JSONDecodeError:
+                print(f"Fehler: JSON-Datei konnte nicht gelesen werden: {json_file_path}")
+                continue
             except Exception as e:
                 print(f"Fehler beim Lesen der Eingabedatei für {be_key}: {e}")
                 continue
@@ -275,20 +279,21 @@ class EpicHtmlGenerator:
             output_file = os.path.join(json_dir, f"{be_key}_summary.html") if self.output_dir is None else os.path.join(self.output_dir, f"{be_key}_summary.html")
 
             try:
-                _, token_usage = self.generate_epic_html(issue_content, be_key, output_file)
-                token_usage_results[be_key] = token_usage
+                self.generate_epic_html(issue_content_dict, be_key, output_file)
                 print(f"HTML-Datei erfolgreich erstellt bei {output_file}")
             except Exception as e:
                 print(f"Fehler bei der HTML-Generierung für {be_key}: {e}")
 
-        return token_usage_results
+        # return token_usage_results # <--- ENTFERNT
 
 
 # Beispielverwendung
 if __name__ == "__main__":
     import argparse
+    import sys
+    from utils.dna_bot_client import DnaBotClient
 
-    # Kommandozeilenargumente parsen
+# Kommandozeilenargumente parsen
     parser = argparse.ArgumentParser(description='Konvertiere JIRA-Issue-Text zu HTML mit eingebetteten Bildern')
     parser.add_argument('--file', default='BE_Liste.txt', help='Datei mit Business Epic Keys (Standard: BE_Liste.txt)')
     parser.add_argument('--model', default='gpt-4.1-mini', help='LLM-Modell für die Generierung (Standard: gpt-4.1-mini)')
@@ -296,12 +301,16 @@ if __name__ == "__main__":
     parser.add_argument('--template', default='./epic-html_template.html', help='Pfad zur HTML-Vorlage (Standard: ./epic-html_template.html)')
     args = parser.parse_args()
 
+    test_client = DnaBotClient()
+
     # HTML-Generator initialisieren
     generator = EpicHtmlGenerator(
+        ai_client=test_client,
         template_path=args.template,
         model=args.model,
         output_dir=args.output_dir
+        # Hinweis: token_tracker ist hier None, was für einen Testlauf OK ist.
     )
 
-    # Mehrere Epics verarbeiten
-    token_usage = generator.process_multiple_epics(args.file)
+    generator.process_multiple_epics(args.file)
+    print("\nVerarbeitung abgeschlossen.")

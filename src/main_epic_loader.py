@@ -1,4 +1,40 @@
-# main_scraper.py
+"""
+Haupt-Orchestrierungsskript für das Laden, Analysieren und Berichten von
+Jira Business Epic Daten.
+
+Dieses Skript dient als zentraler Einstiegspunkt und steuert den gesamten
+Workflow von der Datenerfassung bis zur Erstellung finaler Reports. Es kann
+entweder für ein einzelnes, per Kommandozeile übergebenes Business Epic
+oder für eine Liste von Epics aus einer Datei (`BE_Liste.txt`) ausgeführt werden.
+
+Der Prozess umfasst typischerweise folgende Schritte (konfigurierbar über Flags):
+1.  **Datenbeschaffung (Tree Loader):** Nutzt den `JiraTreeLoader`, um die
+    vollständige Issue-Hierarchie für jedes Business Epic rekursiv von der
+    Jira REST API zu laden. Unterstützt verschiedene Lademodi (`full`, `delta`, `none`),
+    um entweder alle Daten frisch zu ziehen oder effizient nur Änderungen zu laden.
+2.  **Metrische Analyse:** Führt eine Reihe von quantitativen Analysen
+    (Scope, Status, Dynamik, Backlog) über den `AnalysisRunner`
+    und spezialisierte Analyzer-Klassen (`ScopeAnalyzer`, `StatusAnalyzer` etc.)
+    durch. Erstellt dabei auch Plot-Grafiken (z.B. Backlog-Entwicklung).
+3.  **Inhaltliche Zusammenfassung (LLM):** Generiert mittels DNA-Bot Client (LLM)
+    eine qualitative, textbasierte Zusammenfassung des Business Epics, seiner
+    Ziele, Abhängigkeiten und Risiken. Unterstützt Streaming für lange Antworten
+    und nutzt intelligente Kontext-Kürzung (Pruning).
+4.  **Datenaggregation:** Fusioniert die Ergebnisse der metrischen Analysen
+    und der LLM-Zusammenfassung zu einem einzigen, umfassenden JSON-Dokument
+    (`_complete_summary.json`) über den `JsonSummaryGenerator`.
+5.  **HTML-Berichterstellung:** Erzeugt einen detaillierten HTML-Report für jedes
+    Business Epic mithilfe des `EpicHtmlGenerator`. Dieser nutzt LLM-Unterstützung
+    zur Textgenerierung und integriert die erzeugten Plots.
+6.  **Übersetzung (Optional):** Übersetzt den generierten HTML-Report ins Englische
+    mittels des `HtmlTranslator` und des DNA-Bot Clients.
+7.  **Fehlerbehandlung:** Beinhaltet Mechanismen zur Fehlerprotokollierung und
+    einen expliziten Retry-Modus (`--retry-failed`) für fehlgeschlagene Ladevorgänge.
+8.  **Keep-Awake:** Startet einen Hintergrund-Thread, um den System-Ruhezustand
+    während langer Läufe zu verhindern.
+
+Die Konfiguration der einzelnen Schritte erfolgt über Kommandozeilenargumente.
+"""
 
 import os
 import re
@@ -15,88 +51,73 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from utils.jira_scraper import JiraScraper
+# --- GEÄNDERTER IMPORT ---
+# Ersetzt den alten JiraApiLoader durch den neuen rekursiven JiraTreeLoader
+from utils.jira_tree_loader import JiraTreeLoader
+# --- ENDE ÄNDERUNG ---
+
 from utils.jira_tree_classes import JiraTreeGenerator, JiraTreeVisualizer, JiraContextGenerator
-from utils.azure_ai_client import AzureAIClient
+#from utils.azure_ai_client import AzureAIClient
+from utils.dna_bot_client import DnaBotClient
 from utils.epic_html_generator import EpicHtmlGenerator
 from utils.token_usage_class import TokenUsage
 from utils.logger_config import logger
 from utils.json_parser import LLMJsonParser
 from utils.html_translator import HtmlTranslator
 from utils.project_data_provider import ProjectDataProvider
-from features.console_reporter import ConsoleReporter
-from features.json_summary_generator import JsonSummaryGenerator
+from utils.keep_awake import prevent_screensaver
 
 # Importiere die spezifischen Analyzer-Klassen
 from features.scope_analyzer import ScopeAnalyzer
 from features.dynamics_analyzer import DynamicsAnalyzer
 from features.status_analyzer import StatusAnalyzer
-from features.time_creep_analyzer import TimeCreepAnalyzer
+#from features.time_creep_analyzer import TimeCreepAnalyzer
 from features.backlog_analyzer import BacklogAnalyzer
 from features.analysis_runner import AnalysisRunner
-
-
+from features.console_reporter import ConsoleReporter
+from features.json_summary_generator import JsonSummaryGenerator
 
 from utils.config import (
-    JIRA_ISSUES_DIR,
+    # Pfade
     JSON_SUMMARY_DIR,
     HTML_REPORTS_DIR,
-    LLM_MODEL_HTML_GENERATOR,
-    LLM_MODEL_BUSINESS_VALUE,
-    LLM_MODEL_SUMMARY,
-    LLM_MODEL_TRANSLATOR,
-    DEFAULT_SCRAPE_HTML,
-    JIRA_EMAIL,
     PROMPTS_DIR,
     TOKEN_LOG_FILE,
-    SCRAPER_CHECK_DAYS,
     ISSUE_LOG_FILE,
+
+    # Modelle
+    LLM_MODEL_HTML_GENERATOR,
+    LLM_MODEL_SUMMARY,
+    LLM_MODEL_TRANSLATOR,
+    # LLM_MODEL_BUSINESS_VALUE,
+
+    # Tree Configs
     JIRA_TREE_MANAGEMENT,
-    JIRA_TREE_MANAGEMENT_LIGHT,
     JIRA_TREE_FULL,
-    MAX_JIRA_TREE_CONTEXT_SIZE
-)
+
+MAX_TOKEN_BUDGET_FOR_SUMMARY = 40000
 
 # Zentrale Liste der zu verwendenden Analyzer
 ANALYZERS_TO_RUN = [
     ScopeAnalyzer,
     #DynamicsAnalyzer,
     StatusAnalyzer,
-    TimeCreepAnalyzer,
+    #TimeCreepAnalyzer,
     BacklogAnalyzer
 ]
 
 
-def prevent_screensaver(stop_event):
-    """
-    Läuft in einem separaten Thread und drückt alle 8 Minuten die Leertaste via
-    AppleScript, um den System-Bildschirmschoner zu verhindern.
-    """
-    logger.info("Keep-Awake-Thread gestartet. Drückt alle 8 Minuten die Leertaste.")
-    while not stop_event.is_set():
-        if stop_event.wait(480):
-            break
-        if not stop_event.is_set():
-            try:
-                script = 'tell application "System Events" to key code 49'
-                subprocess.run(['osascript', '-e', script], check=True, capture_output=True)
-                logger.info("Keep-Awake: Leertaste gedrückt, um den Bildschirmschoner zu verhindern.")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Keep-Awake-Fehler: AppleScript konnte nicht ausgeführt werden. {e}")
-            except FileNotFoundError:
-                logger.error("Keep-Awake-Fehler: 'osascript' Befehl nicht gefunden. Nur auf macOS verfügbar.")
-                break
-    logger.info("Keep-Awake-Thread wurde beendet.")
-
-def perform_final_retry(azure_client, token_tracker):
+def perform_final_retry(token_tracker):
     """
     Liest hartnäckig fehlgeschlagene Issues aus einer Log-Datei
-    und versucht einen letzten, gezielten Scraping-Durchlauf für diese.
+    und versucht einen letzten, gezielten API-Lade-Durchlauf für diese.
+    (ANGEPASST FÜR API-NUTZUNG)
     """
     if not os.path.exists(ISSUE_LOG_FILE) or os.path.getsize(ISSUE_LOG_FILE) == 0:
         logger.info("Keine fehlgeschlagenen Issues in der Log-Datei gefunden. Überspringe finalen Retry.")
         return
-    logger.info(f"--- Starte finalen Retry-Versuch für Issues aus '{ISSUE_LOG_FILE}' ---")
+    logger.info(f"--- Starte finalen Retry-Versuch (API-MODUS) für Issues aus '{ISSUE_LOG_FILE}' ---")
+
     with open(ISSUE_LOG_FILE, 'r') as f:
         failed_keys = [line.strip() for line in f if line.strip()]
 
@@ -112,40 +133,41 @@ def perform_final_retry(azure_client, token_tracker):
         logger.info("Log-Datei enthält keine gültigen Jira-Keys. Kein Retry notwendig.")
         return
 
-    retry_scraper = JiraScraper(
-        f"https://jira.telekom.de/browse/{valid_failed_keys[0]}", JIRA_EMAIL,
-        model=LLM_MODEL_BUSINESS_VALUE, token_tracker=token_tracker,
-        azure_client=azure_client, scrape_mode='true', check_days=0
-    )
+    # --- NEU: JiraTreeLoader initialisieren ---
+    # Nutzt denselben rekursiven Loader, den wir jetzt auch für den Hauptlauf verwenden.
+    logger.info("Initialisiere JiraTreeLoader für den Retry-Lauf...")
+    tree_loader = JiraTreeLoader(token_tracker=token_tracker)
+    # --- ENDE NEU ---
 
-    # Rufe die saubere, gekapselte Login-Methode des Scrapers auf
-    if not retry_scraper.login():
-        logger.error("Login für den finalen Retry-Versuch fehlgeschlagen. Breche ab.")
-        return
-
-    # Ab hier wird der initialisierte self.driver aus dem Scraper verwendet
     successful_retries, persistent_failures = [], []
     for key in valid_failed_keys:
-        logger.info(f"Dritter Versuch für Issue: {key}")
-        url = f"https://jira.telekom.de/browse/{key}"
-        # Diese Methode verwendet jetzt den im Scraper initialisierten Driver
-        issue_data = retry_scraper.extract_and_save_issue_data(url, key)
-        if issue_data:
-            logger.info(f"Issue {key} im dritten Anlauf erfolgreich verarbeitet.")
-            successful_retries.append(key)
-        else:
-            logger.warning(f"Issue {key} konnte auch im dritten Anlauf nicht verarbeitet werden.")
+        logger.info(f"Dritter Versuch (API-Modus, rekursiv) für Issue: {key}")
+
+        # --- NEU: API-Aufruf statt Scraper ---
+        # Wir rufen die Hauptmethode 'run' auf. Diese lädt den Key und
+        # alle seine Kinder rekursiv.
+        try:
+            # Führe den rekursiven Ladevorgang für diesen einen Key aus
+            tree_loader.run(start_key=key)
+
+            # Prüfen, ob der *spezifische Key* selbst fehlgeschlagen ist
+            if key in tree_loader.issues_to_retry:
+                logger.warning(f"Issue {key} konnte auch im dritten Anlauf (API) nicht verarbeitet werden.")
+                persistent_failures.append(key)
+            else:
+                logger.info(f"Issue {key} im dritten Anlauf (API) erfolgreich verarbeitet.")
+                successful_retries.append(key)
+        except Exception as e:
+            logger.error(f"Schwerer Fehler bei API-Retry für {key}: {e}")
             persistent_failures.append(key)
 
-    retry_scraper.login_handler.close()
-
+    # Logdatei mit den endgültig fehlgeschlagenen Issues neu schreiben
     with open(ISSUE_LOG_FILE, 'w') as f:
         for key in persistent_failures: f.write(f"{key}\n")
 
-    logger.info("--- Finaler Retry-Versuch abgeschlossen. ---")
+    logger.info("--- Finaler Retry-Versuch (API-Modus) abgeschlossen. ---")
     logger.info(f"Erfolgreich nachgeholt: {len(successful_retries)}")
     logger.info(f"Endgültig fehlgeschlagen: {len(persistent_failures)}")
-
 
 def load_prompt(filename, key):
     """Lädt einen Prompt aus einer YAML-Datei im PROMPTS_DIR."""
@@ -190,19 +212,27 @@ def main():
     Hauptfunktion zur Orchestrierung des Skripts.
     """
     parser = argparse.ArgumentParser(description='Jira Issue Link Scraper')
-    parser.add_argument('--scraper', type=str.lower, choices=['true', 'false', 'check'], default='check', help='Steuert das Scraping')
     parser.add_argument('--html_summary', type=str.lower, choices=['true', 'false', 'check'], default='false', help="Erstellt JSON-Zusammenfassung und HTML-Report. 'true': immer neu; 'check': aus Cache, falls vorhanden; 'false': keine Erstellung.")
     parser.add_argument('--issue', type=str, default=None, help='Spezifische Jira-Issue-ID')
     parser.add_argument('--file', type=str, default=None, help='Pfad zur TXT-Datei mit Business Epics')
     parser.add_argument('--translate', type=str.lower, choices=['true', 'false', 'check'], default='false', help="Übersetzt den HTML-Report ins Englische.")
     parser.add_argument('--retry-failed', action='store_true', help='Führt nur den Retry für fehlgeschlagene Issues aus der Log-Datei aus.')
-
+    parser.add_argument(
+        '--loader-mode',
+        type=str.lower,
+        choices=['full', 'delta', 'none'],
+        default='delta',
+        help="Lademodus: 'full' (lädt alle Issues neu), "
+             "'delta' (prüft DB-Cache auf Aktualität, Standard), "
+             "'none' (überspringt den gesamten Ladevorgang)."
+    )
     args = parser.parse_args()
 
     stop_event = threading.Event()
     keep_awake_thread = threading.Thread(target=prevent_screensaver, args=(stop_event,))
     keep_awake_thread.daemon = True
     keep_awake_thread.start()
+    tree_generator_full = None
 
     try:
         token_tracker = TokenUsage(log_file_path=TOKEN_LOG_FILE)
@@ -210,9 +240,7 @@ def main():
         # +++ NEU: Logik zur Behandlung von --retry-failed +++
         if args.retry_failed:
             print("\n--- Modus: Nur fehlgeschlagene Issues erneut verarbeiten ---")
-            business_value_system_prompt = load_prompt("business_value_prompt.yaml", "system_prompt")
-            azure_extraction_client = AzureAIClient(system_prompt=business_value_system_prompt)
-            perform_final_retry(azure_extraction_client, token_tracker)
+            perform_final_retry(token_tracker)
             # Nach dem Retry-Lauf wird das Skript beendet.
             return
 
@@ -221,35 +249,63 @@ def main():
             print("Keine Business Epics gefunden. Programm wird beendet.")
             return
 
-        if args.scraper != 'false':
-            print(f"\n--- Scraping-Modus gestartet (Mode: {args.scraper}) ---")
-            business_value_system_prompt = load_prompt("business_value_prompt.yaml", "system_prompt")
-            azure_extraction_client = AzureAIClient(system_prompt=business_value_system_prompt)
+        # Azure Client für Business Value Extraktion initialisieren (immer verfügbar)
+        #business_value_system_prompt = load_prompt("business_value_prompt.yaml", "system_prompt")
+        #azure_extraction_client = AzureAIClient(system_prompt=business_value_system_prompt)
 
-            scraper = JiraScraper(
-                f"https://jira.telekom.de/browse/{business_epics[0]}", JIRA_EMAIL,
-                model=LLM_MODEL_BUSINESS_VALUE, token_tracker=token_tracker,
-                azure_client=azure_extraction_client, scrape_mode=args.scraper,
-                check_days=SCRAPER_CHECK_DAYS
-            )
+        # --- ANGEPASSTE LADE-LOGIK ---
+        # Prüft auf den neuen 'none'-Modus statt auf 'false'
+        if args.loader_mode != 'none':
+            # Der 'scraper' Wert wird nicht mehr an den Loader übergeben,
+            # da 'JiraTreeLoader' immer den 'full' Modus verwendet.
+            # Der 'check'-Modus wird hier effektiv als 'true' behandelt
+            # (d.h. "Laden ausführen").
+
+            print(f"\n--- API-Lademodus gestartet (Modus: {args.loader_mode}) ---") # <--- Angepasste Ausgabe
+
+            # Initialisiere den neuen Loader EINMAL
+            try:
+                # --- GEÄNDERT: loader_mode wird an den Konstruktor übergeben ---
+                tree_loader = JiraTreeLoader(
+                    token_tracker=token_tracker,
+                    loader_mode=args.loader_mode
+                )
+                # --- ENDE ÄNDERUNG ---
+            except ValueError as e:
+                # Fängt den Fehler ab, wenn JIRA_API_TOKEN fehlt
+                logger.error(f"FEHLER: {e}. Breche Ladevorgang ab.")
+                return
+
+            # Iteriere über die Epics und starte den rekursiven Ladevorgang
             for i, epic in enumerate(business_epics):
                 print(f"\n\n=============================================================\nVerarbeite Business Epic {i+1}/{len(business_epics)}: {epic}")
-                scraper.url = f"https://jira.telekom.de/browse/{epic}"
-                scraper.processed_issues = set()
-                scraper.run(skip_login=(i > 0))
-            if scraper.login_handler: scraper.login_handler.close()
+                # Führe den Ladevorgang für dieses Epic aus
+                # Die 'run'-Methode nutzt jetzt den Modus, der bei der Initialisierung gesetzt wurde.
+                tree_loader.run(start_key=epic)
+
         else:
-            print("\n--- Scraping übersprungen (Mode: 'false') ---")
+            print("\n--- Ladevorgang übersprungen (Modus: 'none') ---") # <--- Angepasste Ausgabe
+        # --- ENDE ANGEPASSTE LADE-LOGIK ---
 
         # +++ VEREINHEITLICHTE LOGIK FÜR ANALYSE UND REPORTING +++
         if args.html_summary != 'false':
             print("\n--- Analyse / Reporting gestartet ---")
 
             # Initialisierung der benötigten Clients und Generatoren
-            azure_summary_client = AzureAIClient()
+            dna_bot_summary_client = DnaBotClient()
             visualizer = JiraTreeVisualizer(format='png')
             context_generator = JiraContextGenerator()
-            html_generator = EpicHtmlGenerator(model=LLM_MODEL_HTML_GENERATOR, token_tracker=token_tracker)
+
+            # --- GEÄNDERT: DnaBotClient wird erstellt und injiziert ---
+            logger.info("Initialisiere DnaBotClient für HTML-Generator...")
+            dna_bot_html_client = DnaBotClient()  # Den Client für die HTML-Generierung erstellen
+            html_generator = EpicHtmlGenerator(
+                ai_client=dna_bot_html_client,   # Den Client hier "injizieren"
+                model=LLM_MODEL_HTML_GENERATOR,
+                token_tracker=token_tracker
+            )
+            # --- ENDE ÄNDERUNG ---
+
             json_parser = LLMJsonParser()
             analysis_runner = AnalysisRunner(ANALYZERS_TO_RUN)
             json_summary_generator = JsonSummaryGenerator()
@@ -283,43 +339,66 @@ def main():
                     analysis_results = analysis_runner.run_analyses(data_provider)
                     reporter.create_backlog_plot(analysis_results.get("BacklogAnalyzer", {}), epic)
 
-                    # 2b: Inhaltliche Zusammenfassung per LLM erstellen
-                    logger.info(f"Erstelle vollständigen Baum für Visualisierung von {epic} mit JIRA_TREE_MANAGEMENT.")
-                    tree_generator_full = JiraTreeGenerator(allowed_types=JIRA_TREE_MANAGEMENT)
-                    issue_tree_for_visualization = tree_generator_full.build_issue_tree(epic)
+                    # --- NEUE LOGIK (Phase 2: Pruning) ---
 
-                    if issue_tree_for_visualization:
-                        visualizer.visualize(issue_tree_for_visualization, epic)
-                    else:
-                        logger.warning(f"Konnte keinen Baum für die Visualisierung von {epic} erstellen. Die Grafik wird im Report fehlen.")
+                    # 1. Erstelle IMMER den vollen Management-Baum als Datenbasis
+                    logger.info(f"Erstelle vollständigen Baum (Datenbasis) für {epic} mit JIRA_TREE_MANAGEMENT.")
+                    data_provider = ProjectDataProvider(epic_id=epic, hierarchy_config=JIRA_TREE_MANAGEMENT)
+                    issue_graph_data = data_provider.issue_tree
+                    if issue_graph_data is None:
+                         logger.warning(f"Konnte keine Graph-Daten für {epic} erstellen (Root-Key fehlt?). Überspringe Visualisierung und Summary.")
+                         continue
 
-                    issue_tree_for_context = issue_tree_for_visualization
+                    # 2. Erstelle die Visualisierung (nutzt denselben Graphen)
+                    visualizer.visualize(issue_graph_data, epic)
 
-                    if issue_tree_for_context and len(issue_tree_for_context) > MAX_JIRA_TREE_CONTEXT_SIZE:
-                        logger.info(f"Management-Baum für LLM-Kontext von {epic} ist mit {len(issue_tree_for_context)} Knoten zu groß (Max: {MAX_JIRA_TREE_CONTEXT_SIZE}). Reduziere auf LIGHT-Hierarchie.")
-                        tree_generator_light = JiraTreeGenerator(allowed_types=JIRA_TREE_MANAGEMENT_LIGHT)
-                        issue_tree_for_context = tree_generator_light.build_issue_tree(epic)
+                    # 3. Erstelle den intelligent gekürzten JSON-Kontext
+                    # Der Generator kümmert sich selbst um das Kürzen und Logging.
 
-                    if not issue_tree_for_context:
-                        logger.warning(f"Konnte keinen gültigen Baum für die LLM-Kontext-Generierung von {epic} erstellen. Überspringe Summary-Generierung.")
+                    json_context = context_generator.generate_context(
+                        G=issue_graph_data,
+                        root_key=epic,
+                        max_token_budget=MAX_TOKEN_BUDGET_FOR_SUMMARY
+                    )
+
+                    if json_context == "{}":
+                        logger.error(f"Konnte LLM-Kontext für {epic} nicht erstellen (selbst Root zu groß). Überspringe Summary-Generierung.")
                         continue
-
-                    json_context = context_generator.generate_context(issue_tree_for_context, epic)
                     summary_prompt_template = load_prompt("summary_prompt.yaml", "user_prompt_template")
                     summary_prompt = summary_prompt_template.format(json_context=json_context)
-                    print(f"     - Erstelle Summary für {epic}")
-                    response_data = azure_summary_client.completion(
+                    print(f"     - Erstelle Summary für {epic} - Promptlänge ca {len(summary_prompt)/4:,.0f} Token")
+
+                    # 1. Generator abrufen
+                    response_generator = dna_bot_summary_client.completion(
                         model_name=LLM_MODEL_SUMMARY,
                         user_prompt=summary_prompt,
-                        max_tokens=20000,
+                        max_tokens=60000,
+                        stream=True, # vermeidet time out fehler bei großen antworten
                         response_format={"type": "json_object"}
                     )
 
-                    if token_tracker and "usage" in response_data:
-                        usage = response_data["usage"]
-                        token_tracker.log_usage(model=LLM_MODEL_SUMMARY, input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens, total_tokens=usage.total_tokens, task_name=f"summary_generation")
+                    # 2. Stream konsumieren und Text zusammensetzen
+                    # (Hierbei werden im Client automatisch <think>-Tags gefiltert und Usage-Daten gesammelt)
+                    full_response_text = ""
+                    for chunk in response_generator:
+                        full_response_text += chunk
 
-                    content_summary = json_parser.extract_and_parse_json(response_data["text"])
+                    # 3. Usage-Daten aus dem Client-Status abrufen (erst NACH dem Stream verfügbar)
+                    usage = dna_bot_summary_client.last_stream_usage
+
+                    # 4. Token-Usage protokollieren
+                    if token_tracker and usage:
+                        token_tracker.log_usage(
+                            model=LLM_MODEL_SUMMARY,
+                            input_tokens=usage.get('prompt_tokens', 0),
+                            output_tokens=usage.get('completion_tokens', 0),
+                            total_tokens=usage.get('total_tokens', 0),
+                            task_name=f"summary_generation"
+                        )
+
+                    # 5. JSON parsen (mit dem vollständig zusammengesetzten Text)
+                    content_summary = json_parser.extract_and_parse_json(full_response_text)
+
                     epic_status = data_provider.issue_details.get(epic, {}).get('status', 'Unbekannt')
                     target_start_status = data_provider.issue_details.get(epic, {}).get('target_start', 'Unbekannt')
                     target_end_status = data_provider.issue_details.get(epic, {}).get('target_end', 'Unbekannt')
@@ -339,13 +418,13 @@ def main():
                     html_generator.generate_epic_html(complete_epic_data, epic, html_file)
                 else:
                     logger.error(f"Konnte keine vollständigen Daten für die HTML-Erstellung von {epic} erzeugen.")
-                
+
                 if args.translate != 'false':
                     # Eigener AI Client für den Übersetzer, da der System-Prompt spezialisiert ist.
                     # Der HtmlTranslator setzt den korrekten System-Prompt selbst.
-                    azure_translator_client = AzureAIClient()
+                    dna_bot_translator_client = DnaBotClient()
                     html_translator = HtmlTranslator(
-                        ai_client=azure_translator_client,
+                        ai_client=dna_bot_translator_client,
                         token_tracker=token_tracker,
                         model_name=LLM_MODEL_TRANSLATOR
                     )

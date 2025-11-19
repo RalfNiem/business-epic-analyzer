@@ -76,27 +76,32 @@ class DataExtractor:
 
     def _extract_story_points(self, driver):
         """
-        Extrahiert die Story Points von der Seite.
+        Extrahiert die Story Points von der Seite mit mehreren Fallback-Strategien.
 
-        Die Methode ist robust und prüft zuerst, ob der Wert in einem
-        <input>-Feld vorliegt (wie es beim Bearbeiten eines Issues der Fall ist)
-        und greift andernfalls auf den sichtbaren Text des Containers zurück.
+        Die Methode prüft zuerst den primären Selektor (via @title-Attribut) und
+        greift bei einem Fehlschlag auf einen zweiten Selektor zurück, der nach
+        dem sichtbaren Label-Text sucht. Innerhalb beider Strategien wird geprüft,
+        ob der Wert in einem <input>-Feld oder als reiner Text vorliegt.
         """
         try:
-            # Finde das <strong>-Element mit dem Titel "Story Points" und wähle
-            # das direkt folgende <div>-Geschwisterelement aus.
+            # PRIMÄRE STRATEGIE: Suche via @title='Story Points'
             value_container = driver.find_element(By.XPATH, "//strong[@title='Story Points']/following-sibling::div[1]")
-
-            # Prüfe, ob sich der Wert in einem <input>-Feld befindet
-            try:
-                input_element = value_container.find_element(By.TAG_NAME, "input")
-                return input_element.get_attribute("value")
-            except NoSuchElementException:
-                # Wenn kein <input>, nimm den sichtbaren Text des Containers
-                return value_container.text.strip()
         except NoSuchElementException:
-            # Wenn das Feld gar nicht existiert
-            return "n/a"
+            try:
+                # FALLBACK-STRATEGIE: Suche via <label>-Text
+                value_container = driver.find_element(By.XPATH, "//strong/label[contains(text(), 'Story Points')]/ancestor::strong/following-sibling::div[1]")
+            except NoSuchElementException:
+                # Wenn beide Strategien fehlschlagen, existiert das Feld nicht.
+                return "n/a"
+
+        # Wenn ein value_container gefunden wurde, extrahiere den Wert.
+        try:
+            # Prüfe, ob sich der Wert in einem <input>-Feld befindet
+            input_element = value_container.find_element(By.TAG_NAME, "input")
+            return input_element.get_attribute("value")
+        except NoSuchElementException:
+            # Wenn kein <input>, nimm den sichtbaren Text des Containers
+            return value_container.text.strip()
 
 
     @staticmethod
@@ -222,7 +227,7 @@ class DataExtractor:
             logger.info(f"Business Scope konnte nicht extrahiert werden")
 
         return business_scope
-        
+
 
     @staticmethod
     def _extract_business_value_from_table(soup: BeautifulSoup) -> dict | None:

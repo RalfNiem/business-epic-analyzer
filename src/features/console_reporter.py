@@ -37,7 +37,7 @@ import re
 from utils.config import LLM_MODEL_TIME_CREEP, TOKEN_LOG_FILE, PLOT_DIR
 from utils.logger_config import logger
 from utils.project_data_provider import ProjectDataProvider # Import ProjectDataProvider
-from utils.azure_ai_client import AzureAIClient # Import AzureAIClient
+#from utils.azure_ai_client import AzureAIClient # Import AzureAIClient
 from utils.prompt_loader import load_prompt_template # Import load_prompt_template
 from utils.token_usage_class import TokenUsage # Import TokenUsage
 from utils.formatting_helpers import format_timedelta_to_months_days, calculate_duration_string, format_iso_to_dd_mm_yyyy
@@ -52,7 +52,7 @@ class ConsoleReporter:
         # Initialize TokenUsage here so it can be passed to AzureAIClient
         self.token_tracker = TokenUsage(log_file_path=TOKEN_LOG_FILE)
         # AzureAIClient instance, system prompt can be general or specific
-        self.azure_summary_client = AzureAIClient(system_prompt="Du bist ein hilfreicher Assistent für die Analyse von Jira-Tickets.")
+        #self.azure_summary_client = AzureAIClient(system_prompt="Du bist ein hilfreicher Assistent für die Analyse von Jira-Tickets.")
 
 
     def report_scope(self, scope_results: dict):
@@ -171,9 +171,9 @@ class ConsoleReporter:
 
         fig, ax = plt.subplots(figsize=(12, 7))
 
-        ax.plot(results_df.index, results_df['refined_backlog'], label='Refined Backlog (Kumulativ)', color='blue', linestyle='--')
-        ax.plot(results_df.index, results_df['finished_backlog'], label='Finished Backlog (Kumulativ)', color='green')
-        ax.fill_between(results_df.index, results_df['finished_backlog'], results_df['refined_backlog'],
+        ax.plot(results_df.index, results_df['refined_story_backlog'], label='Refined Backlog (Kumulativ)', color='blue', linestyle='--')
+        ax.plot(results_df.index, results_df['finished_story_backlog'], label='Finished Backlog (Kumulativ)', color='green')
+        ax.fill_between(results_df.index, results_df['finished_story_backlog'], results_df['refined_story_backlog'],
                         color='orange', alpha=0.3, label='Active Backlog')
 
         # Formatting

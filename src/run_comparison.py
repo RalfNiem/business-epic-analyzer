@@ -1,8 +1,15 @@
 """
-Orchestriert einen KI-gestützten Workflow zur Qualitätsverbesserung.
+Orchestriert einen KI-gestützten Workflow zur Qualitätsverbesserung von
+Business Epic Beschreibungen und Business Value Extraktionen.
 
-Dieses Skript liest die Daten eines oder mehrerer Business Epics aus lokalen
-JSON-Dateien. Für jedes Epic führt es die folgenden Schritte aus:
+Dieses Skript liest die Daten von Business Epics aus lokalen JSON-Dateien im
+Verzeichnis `data/jira_issues`. Es **durchsucht das Verzeichnis und verarbeitet
+standardmäßig nur das *erste* gefundene Issue vom Typ "Business Epic"**,
+basierend auf einem internen Limit (`max_epics_to_process`, standardmäßig auf 1 gesetzt).
+Es akzeptiert keine spezifischen Epic-Keys über die Kommandozeile und liest
+keine Listen aus Dateien ein.
+
+Für das ausgewählte Epic führt es die folgenden Schritte aus:
 1.  Es sendet die ursprüngliche, oft unstrukturierte 'description' an ein
     Azure OpenAI-Sprachmodell (LLM).
 2.  Das LLM generiert daraus eine bereinigte, prägnante neue Beschreibung und
@@ -14,8 +21,21 @@ JSON-Dateien. Für jedes Epic führt es die folgenden Schritte aus:
     Versionen und bewertet die Qualität, den Informationsgewinn und den
     Informationsverlust.
 4.  Alle Ergebnisse (neue Beschreibung, neuer Business Value, KI-Bewertung)
-    werden für jedes verarbeitete Epic in einer zentralen JSONL-Datei
+    werden für das verarbeitete Epic in einer zentralen JSONL-Datei
     ('data/comparison_results.jsonl') gespeichert.
+
+Usage:
+    Stellen Sie sicher, dass die Azure AI Umgebungsvariablen gesetzt sind
+    und die Jira-Issue-Daten im Verzeichnis `data/jira_issues` vorhanden sind.
+    Führen Sie das Skript dann direkt aus dem `src`-Verzeichnis aus:
+
+    ```bash
+    python run_comparison.py
+    ```
+    Das Skript verarbeitet standardmäßig nur das erste gefundene Business Epic
+    und speichert die Ergebnisse in `data/comparison_results.jsonl`. Um mehr
+    Epics zu verarbeiten, muss die Variable `max_epics_to_process` im Skript
+    angepasst werden.
 """
 import os
 import json

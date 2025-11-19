@@ -78,7 +78,6 @@ class TokenUsage:
         "o3-pro": {"input": 0.02, "output": 0.08},
         "o4-mini": {"input": 0.0011, "output": 0.0044},
         "o3-mini": {"input": 0.0011, "output": 0.0044},
-        "gpt-oss-120b": {"input": 0.00015, "output": 0.0006},
 
         "claude-3-5-haiku": {"input": 0.0008, "output": 0.004},
         "claude-3-7-sonnet-latest": {"input": 0.003, "output": 0.015},
@@ -91,6 +90,10 @@ class TokenUsage:
         "gemini/gemini-2.5-pro": {"input": 0.00125, "output": 0.01},
         "gemini/gemini-2.5-flash": {"input": 0.00030, "output": 0.0025},
         "gemini/gemini-2.0-flash": {"input": 0.0001, "output": 0.0004},
+
+        "Mistral-Small-3.2-24B-Instruct-2506": {"input": 0.0, "output": 0.0},
+        "DeepSeek-R1-0528": {"input": 0.0, "output": 0.0},
+        "gpt-oss-120b": {"input": 0.0, "output": 0.0},
         # Weitere Modelle hier hinzufügen
     }
 

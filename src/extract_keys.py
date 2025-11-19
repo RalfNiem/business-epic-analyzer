@@ -1,3 +1,23 @@
+"""
+Identifiziert Business Epics, für die noch kein HTML-Report generiert wurde.
+
+Dieses Skript dient als Hilfsmittel in der Reporting-Pipeline. Es führt
+folgende Schritte aus:
+1.  Extrahiert alle eindeutigen Business-Epic-Keys aus den Dateinamen im
+    Verzeichnis `data/json_summary`. Es wird angenommen, dass jede Datei dort
+    die Ergebnisse einer Analyse für ein bestimmtes Epic enthält und der Key
+    Teil des Dateinamens ist (z.B. `BEMABU-123_complete_summary.json`).
+2.  Überprüft für jeden extrahierten Key, ob im Verzeichnis `data/html_reports`
+    bereits eine entsprechende HTML-Datei (z.B. `BEMABU-123_summary.html`)
+    existiert. Es werden dabei gängige Namensvarianten berücksichtigt.
+3.  Sammelt alle Keys, für die *keine* passende HTML-Datei gefunden wurde.
+4.  Speichert die Liste der fehlenden Keys in der Textdatei `keys_missing_html.txt`
+    im Projekt-Root.
+
+Diese Liste kann anschließend verwendet werden, um gezielt nur für die fehlenden
+Epics die HTML-Generierung anzustoßen.
+"""
+
 import os
 
 # --- Konfiguration ---

@@ -1,3 +1,24 @@
+"""
+Analysiert Jira Business Epics und Initiatives auf das Vorhandensein von
+Business-Value-Einträgen.
+
+Dieses Skript durchsucht das `data/jira_issues`-Verzeichnis nach JSON-Dateien,
+die Business Epics oder Initiatives repräsentieren. Es prüft, ob im
+`business_value`-Feld der JSON-Struktur Einträge vorhanden sind.
+
+Die Analyse unterscheidet zwischen:
+1.  Issues, die *irgendeinen* Business-Value-Eintrag haben.
+2.  Issues, die *keinen* Business-Value-Eintrag haben.
+3.  Eine detaillierte Aufschlüsselung, welche Issues Einträge in spezifischen
+    Unterfeldern des Business Value (z.B. `revenue`, `time_criticality_justification`)
+    haben.
+
+Die Ergebnisse werden übersichtlich formatiert in einer Textdatei
+(`business_value_analysis.txt`) im Projekt-Root gespeichert. Dies dient der
+Datenqualitätsprüfung und Identifizierung von Epics/Initiatives, bei denen
+wichtige strategische Informationen fehlen könnten.
+"""
+
 import os
 import json
 from collections import defaultdict

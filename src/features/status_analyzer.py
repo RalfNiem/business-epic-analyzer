@@ -10,18 +10,17 @@ wesentlichen zeitlichen Dimensionen eines Projekts:
     Geschwindigkeit des Wertstroms auf strategischer Ebene.
 
 2.  **Coding-Laufzeit (Lead Time):** Sie definiert und berechnet den Zeitraum der
-    aktiven Software-Entwicklung. Dies wird abgeleitet aus den Statuswechseln der
-    untergeordneten User Stories. Die "Coding Time" beginnt, wenn die *erste*
-    Story in den Status 'In Progress' wechselt, und endet, wenn die *letzte*
-    Story in einen Endstatus ('Resolved' oder 'Closed') übergeht. Diese Metrik
-    liefert eine präzise Messung der reinen Umsetzungsdauer.
-
-Die Klasse stützt sich ausschließlich auf die chronologischen Aktivitätsdaten,
-um eine genaue und nachvollziehbare Analyse zu gewährleisten.
+    aktiven Software-Entwicklung.
+    -   Start: Wenn die *erste* Story in den Status 'In Progress' wechselt
+          (ermittelt aus den Aktivitäten).
+    -   Ende: Wenn die *letzte* Story in einen Endstatus ('Resolved' oder 'Closed')
+          übergeht (ermittelt aus den 'resolved'/'closed_date'-Feldern).
+    Diese Metrik liefert eine präzise Messung der reinen Umsetzungsdauer.
 """
 
 from datetime import datetime, timedelta
 from src.utils.project_data_provider import ProjectDataProvider
+from utils.logger_config import logger # NEU: logger importiert
 
 class StatusAnalyzer:
     """
@@ -112,19 +111,60 @@ class StatusAnalyzer:
 
         story_keys = [k for k, v in issue_details.items() if v.get('type') == 'Story']
         start_time, end_time = None, None
+
+        # --- LOGIK 1: Finde den ERSTEN 'In Progress'-Status (aus Aktivitäten) ---
         story_activities = [act for act in all_activities if act.get('issue_key') in story_keys]
         for activity in story_activities:
-            if activity.get('feld_name') == 'Status':
+            if activity.get('feld_name') == 'status':
                 if not start_time and self._clean_status_name(activity.get('neuer_wert')) == 'IN PROGRESS':
                     start_time = activity.get('zeitstempel_iso')
-                if self._clean_status_name(activity.get('neuer_wert')) in ['RESOLVED', 'CLOSED']:
-                    end_time = activity.get('zeitstempel_iso')
+                    break # Optimierung: Stoppe, sobald der erste gefunden wurde
 
-        # NEUE LOGIK: Berechnung der 'coding_duration'
+        # --- LOGIK 2: Finde den LETZTEN Abschluss (aus Cache-Feldern) ---
+        all_story_completion_dates = []
+        for key in story_keys:
+            details = issue_details.get(key)
+            if not details:
+                continue
+
+            resolved_str = details.get("resolved")
+            closed_str = details.get("closed_date") # Nutzt den Schlüssel aus project_data_provider
+
+            resolved_dt, closed_dt = None, None
+
+            if resolved_str:
+                try: resolved_dt = datetime.fromisoformat(resolved_str)
+                except (ValueError, TypeError):
+                    logger.warning(f"Ungültiges 'resolved' Datum für {key}: {resolved_str}")
+
+            if closed_str:
+                try: closed_dt = datetime.fromisoformat(closed_str)
+                except (ValueError, TypeError):
+                    logger.warning(f"Ungültiges 'closed_date' Datum für {key}: {closed_str}")
+
+            # Finde das MINIMALE (früheste) Abschlussdatum FÜR DIESES EINE ISSUE
+            issue_completion_dt = None
+            if resolved_dt and closed_dt:
+                issue_completion_dt = min(resolved_dt, closed_dt)
+            elif resolved_dt:
+                issue_completion_dt = resolved_dt
+            elif closed_dt:
+                issue_completion_dt = closed_dt
+
+            if issue_completion_dt:
+                all_story_completion_dates.append(issue_completion_dt)
+
+        # Finde das MAXIMALE (späteste) Datum von allen minimalen Daten
+        if all_story_completion_dates:
+            final_end_dt = max(all_story_completion_dates)
+            end_time = final_end_dt.isoformat()
+
+
+        # --- BERECHNUNG DER 'coding_duration' (Logik bleibt gleich) ---
         coding_duration_str = "Nicht gestartet"
         if start_time:
             start_dt = datetime.fromisoformat(start_time)
-            # Wenn end_time nicht gesetzt ist, das aktuelle Datum verwenden
+            # Wenn end_time nicht gesetzt ist (weil nichts resolved/closed ist), das aktuelle Datum verwenden
             end_dt = datetime.fromisoformat(end_time) if end_time else datetime.now().astimezone()
 
             duration = end_dt - start_dt
@@ -140,6 +180,6 @@ class StatusAnalyzer:
             "all_status_changes": all_status_changes,
             "epic_status_durations": durations,
             "coding_start_time": start_time,
-            "coding_end_time": end_time,  # Das ursprüngliche Enddatum bleibt für die Transparenz null
-            "coding_duration": coding_duration_str # Das neu berechnete Feld
+            "coding_end_time": end_time,  # Das ist jetzt das MAXIMALE der MINIMALEN Daten
+            "coding_duration": coding_duration_str
         }

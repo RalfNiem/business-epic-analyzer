@@ -1,3 +1,23 @@
+"""
+Extrahiert und sammelt detaillierte Inhalte aus den Business-Value-Feldern
+von Jira Business Epics und Initiatives.
+
+Dieses Skript scannt das `data/jira_issues`-Verzeichnis und liest die JSON-Dateien
+von Business Epics und Initiatives. Es konzentriert sich auf das `business_value`-Objekt
+innerhalb jeder Datei und extrahiert die textuellen Inhalte aus den spezifischen
+Unterfeldern (z.B. `revenue`, `cost_saving`, `justification`).
+
+Die extrahierten Texte werden nach ihrem Ursprungsfeld gruppiert (wobei
+Felder wie `justification` eindeutig benannt werden, z.B.
+`business_impact_justification`).
+
+Das Ergebnis ist eine formatierte Textdatei (`business_value_details.txt`), die
+für jedes Business-Value-Feld auflistet, welche Epics/Initiatives dort einen
+Eintrag haben und wie dieser lautet. Dies ermöglicht eine detaillierte qualitative
+Analyse der Begründungen und Inhalte, die zur strategischen Bewertung der
+Vorgänge beitragen.
+"""
+
 import os
 import json
 from collections import defaultdict

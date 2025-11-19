@@ -8,7 +8,7 @@ user_prompt_template: |
 
      a.) **Gesamtziel** des Business Epics präzise & verständlich zusammengefassen => nutze für das Gesamtziel insbesondere die Felder 'description' und 'title' des Business Epics; stelle sicher, dass das Gesamtziel in 2-3 Sätzen beschrieben ist und klar wird, für wen etwas verbessert/verändert wird, was verbessert/verändert wird und was das Gesamtziel der geplanten Verbesserung/Verändeurng ist
 
-     b.) **Einzelziele** präzise & verständlich zusammengefassen => nutze für die Einzelziele insbesondere die Felder 'description' und 'title' aller über 'issue_links' direkt mit dem Business Epic verbundenen Jira-Issues;  jedes Einzelziel sollte in 1-2 Sätzen beschrieben sein; fokussiere Dich auf die angetrebte Verbesserung/Veränderung; beschreibe nicht die Funktion! falls es mehr als 4 Einzelziele sind, versuche diese sinnvoll zusammenzufassen
+     b.) **Einzelziele** präzise & verständlich zusammengefassen => nutze für die Einzelziele insbesondere die Felder 'description' und 'acceptance_criteria' und 'title' aller über 'issue_links' direkt mit dem Business Epic verbundenen Jira-Issues;  jedes Einzelziel sollte in 1-2 Sätzen beschrieben sein; fokussiere Dich auf die angetrebte Verbesserung/Veränderung; beschreibe nicht die Funktion! falls es mehr als 4 Einzelziele sind, versuche diese sinnvoll zusammenzufassen
 
      c.) **Geschäftlicher Nutzen ("Business Value")** => nutze dafür die 'business_value'-Inhalte des Business Epics; konzentriere Dich auf Zahlen/Daten falls vorhanden; formuliere kurz & präzise; falls die angehängten Jira Issues keine Informationen beinhalten, schreibe 'Keine Informationen verfügbar'
 

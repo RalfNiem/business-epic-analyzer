@@ -11,6 +11,7 @@ import sys
 import logging
 import json
 from bs4 import BeautifulSoup, NavigableString
+from typing import Any # <-- NEU: Importiere 'Any' für Flexibilität
 
 # Stellt sicher, dass die übergeordneten utils-Module gefunden werden
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -18,7 +19,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from utils.config import HTML_REPORTS_DIR
-from utils.azure_ai_client import AzureAIClient
+# WIR IMPORTIEREN BEIDE, um flexibel zu bleiben, oder nur den DnaBotClient
+#from utils.azure_ai_client import AzureAIClient 
+from utils.dna_bot_client import DnaBotClient # <-- NEU
 from utils.token_usage_class import TokenUsage
 
 # System-Prompt für die Batch-Verarbeitung mit JSON
@@ -43,17 +46,30 @@ class HtmlTranslator:
     gebündelt an eine KI-API zu senden und die Ergebnisse anschließend wieder
     in das HTML-Dokument einzufügen.
     """
-    def __init__(self, ai_client: AzureAIClient, token_tracker: TokenUsage, model_name: str):
+    def __init__(self, 
+                 ai_client: Any,  # <-- GEÄNDERT (von AzureAIClient zu Any)
+                 token_tracker: TokenUsage, 
+                 model_name: str):
         """
         Initialisiert den HtmlTranslator.
 
         Args:
-            ai_client (AzureAIClient): Ein instanziierter Client für die Azure AI API.
+            ai_client (Any): Ein instanziierter Client (DnaBotClient oder AzureAIClient).
             token_tracker (TokenUsage): Eine Instanz zur Protokollierung des Token-Verbrauchs.
             model_name (str): Der Name des zu verwendenden Übersetzungsmodells.
         """
         self.ai_client = ai_client
-        self.ai_client.system_prompt = SYSTEM_PROMPT_TRANSLATOR # Setzt den spezifischen Prompt
+        
+        # --- ANPASSUNG FÜR DNA-BOT-CLIENT ---
+        # Der DnaBotClient erwartet den Prompt zur Laufzeit,
+        # der AzureAIClient beim Start. Wir speichern ihn lokal.
+        self.system_prompt = SYSTEM_PROMPT_TRANSLATOR 
+        
+        # Falls es der alte AzureAIClient ist, setzen wir das Attribut weiterhin
+        if isinstance(self.ai_client, AzureAIClient):
+             self.ai_client.system_prompt = SYSTEM_PROMPT_TRANSLATOR
+        # --- ENDE ANPASSUNG ---
+             
         self.token_tracker = token_tracker
         self.model_name = model_name
 
@@ -116,25 +132,48 @@ class HtmlTranslator:
             api_payload = {"texts_to_translate": texts_for_api}
             user_prompt_json = json.dumps(api_payload, ensure_ascii=False, indent=2)
 
+            # --- ANPASSUNG FÜR DNA-BOT-CLIENT ---
             response = self.ai_client.completion(
                 model_name=self.model_name,
                 user_prompt=user_prompt_json,
+                system_prompt=self.system_prompt, # <-- HINZUGEFÜGT
                 temperature=0.1,
                 max_tokens=4096,
                 response_format={"type": "json_object"}
             )
+            # --- ENDE ANPASSUNG ---
 
-            self.token_tracker.log_usage(
-                model=self.model_name,
-                input_tokens=response['usage'].prompt_tokens,
-                output_tokens=response['usage'].completion_tokens,
-                total_tokens=response['usage'].total_tokens,
-                task_name="html_translation",
-                entity_id=issue_key
-            )
+            # Token-Tracking
+            # Wir prüfen beide Antwortstrukturen (Objekt-Attribut 'usage' oder Dict-Key 'usage')
+            usage_data = None
+            if hasattr(response, 'usage'): # Für OpenAI-Objekte
+                usage_data = response.usage
+            elif isinstance(response, dict) and 'usage' in response: # Für DnaBotClient-Dicts
+                usage_data = response['usage']
+
+            if usage_data:
+                # Prüfen, ob usage_data ein Objekt oder ein Dict ist
+                if isinstance(usage_data, dict):
+                    prompt_tokens = usage_data.get('prompt_tokens', 0)
+                    completion_tokens = usage_data.get('completion_tokens', 0)
+                    total_tokens = usage_data.get('total_tokens', 0)
+                else: # Annahme: Objekt (wie bei OpenAI)
+                    prompt_tokens = getattr(usage_data, 'prompt_tokens', 0)
+                    completion_tokens = getattr(usage_data, 'completion_tokens', 0)
+                    total_tokens = getattr(usage_data, 'total_tokens', 0)
+
+                self.token_tracker.log_usage(
+                    model=self.model_name,
+                    input_tokens=prompt_tokens,
+                    output_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    task_name="html_translation",
+                    entity_id=issue_key
+                )
 
             # --- PHASE 3: Antwort verarbeiten und Inhalte wieder einfügen ---
-            translated_data = json.loads(response['text'])
+            # Der 'text'-Schlüssel ist bei beiden Clients identisch
+            translated_data = json.loads(response['text'] if isinstance(response, dict) else response.choices[0].message.content)
             translations = translated_data.get("translations", [])
 
             if len(translations) != len(nodes_to_translate):
@@ -152,7 +191,9 @@ class HtmlTranslator:
 
         except json.JSONDecodeError:
             logging.error("Fehler beim Parsen der JSON-Antwort von der API.", exc_info=True)
-            logging.debug(f"Erhaltene Antwort: {response.get('text', 'Keine Antwort')}")
+            # Anpassung, um die Antwort aus beiden möglichen Strukturen zu holen
+            raw_response_text = response.get('text', 'Keine Antwort') if isinstance(response, dict) else getattr(response.choices[0].message, 'content', 'Keine Antwort')
+            logging.debug(f"Erhaltene Antwort: {raw_response_text}")
             return
         except Exception as e:
             logging.error(f"Ein Fehler ist während des API-Aufrufs aufgetreten: {e}", exc_info=True)

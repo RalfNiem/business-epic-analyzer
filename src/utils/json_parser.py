@@ -3,6 +3,25 @@ import re
 from utils.logger_config import logger
 
 class LLMJsonParser:
+    """
+        Ein robuster Parser zum Extrahieren und Reparieren von JSON-Daten aus LLM-Antworten.
+
+        Da Large Language Models (LLMs) oft Text, Markdown-Blöcke oder "Reasoning"-Tags
+        (<think>...</think>) um das eigentliche JSON herum generieren oder invalides JSON
+        erzeugen (z.B. verschachtelte Anführungszeichen), versucht dieser Parser,
+        das JSON intelligent zu isolieren und syntaktische Fehler automatisch zu beheben.
+
+        Hauptfunktionen:
+        ----------------
+        * **Extraktion:** Findet JSON in Markdown-Codeblöcken (```json ... ```) oder
+        sucht nach geschweiften Klammern im Text.
+        * **Bereinigung:** Entfernt <think>-Blöcke und Text vor/nach dem JSON.
+        * **Reparatur:** Fixiert häufige JSON-Fehler wie:
+            - Fehlende Anführungszeichen bei Keys.
+            - Einfache statt doppelte Anführungszeichen.
+            - Verschachtelte doppelte Anführungszeichen in Strings.
+            - Trailing Commas.
+        """
     def __init__(self):
         self.json_pattern = re.compile(r'```json\s*(.*?)\s*```', re.DOTALL)
         self.curly_pattern = re.compile(r'(\{.*\})', re.DOTALL)
@@ -34,34 +53,33 @@ class LLMJsonParser:
                 logger.info(f"Fehler bei Methode 2: Look for JSON code blocks")
                 pass
 
-        # Method 3: Look for text between curly braces
-        curly_match = self.curly_pattern.search(text)
-        if curly_match:
-            json_text = curly_match.group(1)
-            try:
-                return json.loads(json_text)
-            except json.JSONDecodeError:
-                logger.info(f"Fehler bei Methode 3: Look for text between curly braces")
-                pass
-
         # If all methods fail, attempt to clean and fix the JSON
         return self._clean_and_fix_json(text)
 
     def _clean_and_fix_json(self, text):
         """
         Attempts to clean and fix malformed JSON.
-
-        Args:
-            text (str): Text that might contain malformed JSON
-
-        Returns:
-            dict: Parsed JSON or empty dict if all attempts fail
+        Diese Methode extrahiert jetzt auch intelligent JSON aus
+        umgebendem Text (z.B. <think>... Blöcken).
         """
-        # Try to extract content between outermost curly braces
         try:
-            # Find the first opening brace and last closing brace
-            start_idx = text.find('{')
+            # --- MODIFIZIERTE EXTRAKTIONS-LOGIK ---
+            # Sucht nach dem JSON-Objekt *NACH* einem möglichen <think>...</think> Block.
+
+            # Finde das Ende des letzten </think> Blocks
+            last_think_tag_end = text.rfind('</think>')
+
+            search_start_index = 0
+            if last_think_tag_end != -1:
+                # Setze den Startpunkt der Suche auf *nach* dem Tag
+                search_start_index = last_think_tag_end + len('</think>')
+
+            # Finde das erste '{' NACH dem <think> Block
+            start_idx = text.find('{', search_start_index)
+
+            # Finde die letzte '}' im gesamten Text
             end_idx = text.rfind('}')
+            # --- ENDE MODIFIZIERTE LOGIK ---
 
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                 json_text = text[start_idx:end_idx+1]
@@ -103,7 +121,9 @@ class LLMJsonParser:
             pass
 
         # Return empty dict if all attempts fail
+        logger.error("JSON Text konnte nach _clean_and_fix_json nicht gelesen werden.")
         return {}
+
 
     def _apply_aggressive_fixes(self, json_text):
         """

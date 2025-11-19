@@ -1,3 +1,24 @@
+"""
+Führt ein gezieltes Web-Scraping für eine Liste von Jira Business Epics durch,
+um deren Business Value und Akzeptanzkriterien zu aktualisieren.
+
+Dieses Skript liest eine Liste von Jira-Keys aus einer definierten Textdatei
+(`business_value_epic_list.txt`). Für jeden Key wird der `JiraScraper` verwendet,
+um die entsprechende Jira-Webseite aufzurufen. Der Scraper extrahiert die
+Beschreibung, verarbeitet sie optional mittels KI, um einen strukturierten
+Business Value zu extrahieren, und liest die Akzeptanzkriterien aus.
+
+Das Hauptziel ist die Aktualisierung oder erstmalige Erfassung dieser spezifischen
+Felder in den lokalen JSON-Dateien (`data/jira_issues`). Es wird eine einzige,
+persistente Browser-Session genutzt, um den Login-Overhead zu minimieren.
+
+Anwendungsfälle:
+-   Aktualisierung des Business Value nach manueller Überarbeitung in Jira.
+-   Erstmalige Extraktion des Business Value für eine definierte Liste von Epics
+    mittels KI.
+-   Sicherstellung, dass die Akzeptanzkriterien aktuell sind.
+"""
+
 import os
 import sys
 
